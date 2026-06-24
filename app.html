@@ -866,8 +866,15 @@ function renderGenerador() {
         </div>
       </div>
       <div class="form-group">
-        <label class="form-label">Descripción / Contenido Requerido</label>
-        <textarea class="form-control" id="gen-descripcion" style="min-height:120px" placeholder="Describa el contenido, requisitos específicos, parámetros, cláusulas a incluir..."></textarea>
+        <label class="form-label">📎 Basar en un documento cargado (opcional)</label>
+        <select class="form-control" id="gen-fuente">
+          <option value="">— Generar desde cero (sin documento base) —</option>
+        </select>
+        <p style="font-size:12px;color:var(--text-light);margin-top:4px">Si elegís un documento, la IA usará su contenido. Ej: subiste un Word y querés su PDF, o generar una nueva versión a partir de uno existente.</p>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Descripción / Instrucciones</label>
+        <textarea class="form-control" id="gen-descripcion" style="min-height:120px" placeholder="Describa el contenido o las instrucciones. Ej: 'Convertí este Word a PDF formal', 'Generá la versión 2 actualizando los parámetros de control'..."></textarea>
       </div>
       <button class="btn btn-primary" id="gen-btn" onclick="generarDocumento()" style="width:100%;justify-content:center;padding:14px">
         ✨ Generar Documento
@@ -876,6 +883,25 @@ function renderGenerador() {
     <div id="generator-result">
       <div id="gen-result-content"></div>
     </div>`;
+  cargarFuentesGenerador();
+}
+
+async function cargarFuentesGenerador() {
+  if (!supabaseClient) return;
+  try {
+    const { data } = await supabaseClient.from('documentos').select('id,nombre,tipo,contenido_texto').order('creado_en', { ascending: false }).limit(200);
+    const sel = document.getElementById('gen-fuente');
+    if (!sel || !data) return;
+    window._fuentesGen = {};
+    data.forEach(d => {
+      window._fuentesGen[d.id] = d;
+      const tieneTexto = d.contenido_texto ? ' ✓' : ' (sin texto)';
+      const opt = document.createElement('option');
+      opt.value = d.id;
+      opt.textContent = d.nombre + ' [' + d.tipo + ']' + tieneTexto;
+      sel.appendChild(opt);
+    });
+  } catch(e) {}
 }
 
 async function generarDocumento() {
@@ -887,14 +913,22 @@ async function generarDocumento() {
   const version = document.getElementById('gen-version').value.trim();
   const fecha = document.getElementById('gen-fecha').value;
   const descripcion = document.getElementById('gen-descripcion').value.trim();
-  if (!descripcion) { showToast('Ingrese una descripción del documento', 'warning'); return; }
+  const fuenteId = document.getElementById('gen-fuente') ? document.getElementById('gen-fuente').value : '';
+  if (!descripcion && !fuenteId) { showToast('Ingrese una descripción o elija un documento base', 'warning'); return; }
   const btn = document.getElementById('gen-btn');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Generando con IA...';
   const metadata = { tipo, subtipo, cliente, producto, codigo, version, fecha, descripcion };
   try {
+    // Si hay documento base, incluir su contenido
+    let baseTexto = '';
+    if (fuenteId && window._fuentesGen && window._fuentesGen[fuenteId]) {
+      const f = window._fuentesGen[fuenteId];
+      if (f.contenido_texto) baseTexto = '\n\n=== CONTENIDO DEL DOCUMENTO BASE "' + f.nombre + '" ===\n' + f.contenido_texto.slice(0, 35000) + '\n=== FIN DOCUMENTO BASE ===\n\nUsá este contenido como base. Respetá la información real que contiene; reorganizala y completala según las instrucciones, sin inventar datos que contradigan el original.';
+      else baseTexto = '\n\n(Se seleccionó el documento "' + f.nombre + '" como base pero no tiene texto extraído.)';
+    }
     const sys = 'Eres un experto en documentación técnica de calidad e inocuidad alimentaria (FSSC 22000, ISO 22000, HACCP, BRC, IFS). Genera documentos completos, profesionales y bien estructurados en español. Usa el formato apropiado para cada tipo de documento.';
-    const msg = 'Genera un documento de tipo "' + subtipo + '" con los siguientes datos:\n- Tipo de archivo: ' + tipo + '\n- Cliente: ' + (cliente || 'N/A') + '\n- Producto: ' + (producto || 'N/A') + '\n- Código: ' + (codigo || 'DOC-001') + '\n- Versión: ' + (version || 'v1.0') + '\n- Fecha: ' + fecha + '\n- Descripción/Requisitos: ' + descripcion + '\n\nGenera el contenido completo. Para tablas usa: TABLA|Col1|Col2\nFILA|val1|val2. Incluye todos los apartados necesarios para un documento técnico profesional de calidad alimentaria.';
+    const msg = 'Genera un documento de tipo "' + subtipo + '" con los siguientes datos:\n- Tipo de archivo: ' + tipo + '\n- Cliente: ' + (cliente || 'N/A') + '\n- Producto: ' + (producto || 'N/A') + '\n- Código: ' + (codigo || 'DOC-001') + '\n- Versión: ' + (version || 'v1.0') + '\n- Fecha: ' + fecha + '\n- Descripción/Instrucciones: ' + (descripcion || 'Reproducí y formateá profesionalmente el documento base.') + baseTexto + '\n\nGenera el contenido completo. Para tablas usa: TABLA|Col1|Col2\nFILA|val1|val2. Incluye todos los apartados necesarios para un documento técnico profesional de calidad alimentaria.';
     const aiContent = await callAI([{ role: 'user', content: msg }], sys);
     if (!aiContent) throw new Error('Sin respuesta de la IA');
     const panel = document.getElementById('generator-result');
