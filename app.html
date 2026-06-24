@@ -556,9 +556,18 @@ function renderDocumentos() {
         <div id="selected-doc-panel" style="display:none" class="card">
           <div class="card-title" id="selected-doc-title"></div>
           <div class="form-group">
+            <label class="form-label">Nombre del documento</label>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <input type="text" class="form-control" id="edit-nombre" style="flex:1;min-width:200px">
+              <button class="btn btn-secondary btn-sm" onclick="renombrarDoc()">✏️ Renombrar</button>
+            </div>
+          </div>
+          <div class="form-group">
             <label class="form-label">Mover a carpeta</label>
-            <select class="form-control" id="mover-carpeta-select" style="margin-bottom:8px"></select>
-            <button class="btn btn-secondary btn-sm" onclick="moverDocACarpeta()" style="margin-bottom:12px">📁 Mover</button>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <select class="form-control" id="mover-carpeta-select" style="flex:1;min-width:200px"></select>
+              <button class="btn btn-secondary btn-sm" onclick="moverDocACarpeta()">📁 Mover</button>
+            </div>
           </div>
           <div class="form-group">
             <label class="form-label">Instrucción para la IA</label>
@@ -566,7 +575,8 @@ function renderDocumentos() {
           </div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
             <button class="btn btn-primary" onclick="processDocWithAI()"><span id="proc-btn-text">🤖 Procesar con IA</span></button>
-            <button class="btn btn-danger btn-sm" onclick="markObsolete()">🗄️ Pasar a Obsoleto</button>
+            <button class="btn btn-secondary btn-sm" onclick="markObsolete()">🗄️ Pasar a Obsoleto</button>
+            <button class="btn btn-danger btn-sm" onclick="eliminarDoc()">🗑️ Eliminar</button>
           </div>
         </div>
         <div id="ai-result-panel"></div>
@@ -676,6 +686,16 @@ async function extraerTexto(file, ext) {
 
 async function uploadFiles(files) {
   if (!supabaseClient) { showToast('Configure Supabase primero', 'error'); return; }
+  // Aviso de duplicados: nombres que ya existen en el sistema
+  const existentes = (uploadedDocs || []).map(d => d.nombre.toLowerCase());
+  const duplicados = files.filter(f => existentes.includes(f.name.toLowerCase()));
+  if (duplicados.length) {
+    const lista = duplicados.map(f => '• ' + f.name).join('\n');
+    if (!confirm('⚠️ Ya existe' + (duplicados.length > 1 ? 'n estos documentos' : ' este documento') + ' en el sistema:\n\n' + lista + '\n\n¿Subir de todos modos (quedará duplicado)?')) {
+      showToast('Subida cancelada', 'info');
+      return;
+    }
+  }
   document.getElementById('upload-progress').style.display = 'block';
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
@@ -742,13 +762,19 @@ function renderFileCards() {
   const icons = { PDF: '📄', DOCX: '📝', XLSX: '📊' };
   const bc = { PDF: 'badge-pdf', DOCX: 'badge-docx', XLSX: 'badge-xlsx' };
   const titulo = carpetaActual === 'todas' ? 'Todos los documentos' : '📁 ' + carpetaActual;
-  area.innerHTML = '<h3 style="margin-bottom:14px;color:var(--primary);font-size:15px">' + titulo + ' (' + filtered.length + ')</h3><div class="file-cards">' +
-    filtered.map(doc => '<div class="file-card ' + (selectedDocId === doc.id ? 'selected' : '') + '" onclick="selectDoc(\'' + doc.id + '\')">' +
+  // Detectar nombres duplicados (en todo el sistema, no solo la carpeta)
+  const conteo = {};
+  uploadedDocs.forEach(d => { const k = d.nombre.toLowerCase(); conteo[k] = (conteo[k] || 0) + 1; });
+  const totalDup = Object.values(conteo).filter(n => n > 1).length;
+  const avisoDup = totalDup ? '<div style="background:#fff3cd;border:1px solid #ffe08a;color:#7a5b00;padding:8px 12px;border-radius:8px;font-size:13px;margin-bottom:12px">⚠️ Hay ' + totalDup + ' nombre(s) de documento duplicado(s). Revisá y eliminá los que sobren.</div>' : '';
+  area.innerHTML = avisoDup + '<h3 style="margin-bottom:14px;color:var(--primary);font-size:15px">' + titulo + ' (' + filtered.length + ')</h3><div class="file-cards">' +
+    filtered.map(doc => { const esDup = conteo[doc.nombre.toLowerCase()] > 1;
+      return '<div class="file-card ' + (selectedDocId === doc.id ? 'selected' : '') + '" onclick="selectDoc(\'' + doc.id + '\')">' +
       '<div class="file-card-icon">' + (icons[doc.tipo] || '📄') + '</div>' +
-      '<div class="file-card-name">' + escapeHtml(doc.nombre) + '</div>' +
+      '<div class="file-card-name">' + (esDup ? '⚠️ ' : '') + escapeHtml(doc.nombre) + '</div>' +
       '<div class="file-card-meta"><span class="badge ' + (bc[doc.tipo] || '') + '">' + escapeHtml(doc.tipo || '') + '</span>' +
       (doc.tamano ? ' · ' + Math.round(doc.tamano / 1024) + ' KB' : '') + '</div>' +
-      '<div class="file-card-meta" style="margin-top:4px;color:var(--text-light)">' + (doc.carpeta || 'General') + ' · ' + formatDate(doc.creado_en) + '</div></div>').join('') + '</div>';
+      '<div class="file-card-meta" style="margin-top:4px;color:var(--text-light)">' + (doc.carpeta || 'General') + ' · ' + formatDate(doc.creado_en) + '</div></div>'; }).join('') + '</div>';
 }
 
 function selectDoc(id) {
@@ -759,12 +785,49 @@ function selectDoc(id) {
   if (selectedDocId) {
     const doc = uploadedDocs.find(d => d.id === id);
     document.getElementById('selected-doc-title').textContent = '📄 ' + doc.nombre;
+    const inp = document.getElementById('edit-nombre');
+    if (inp) inp.value = doc.nombre;
     panel.style.display = 'block';
   } else {
     panel.style.display = 'none';
     const r = document.getElementById('ai-result-panel');
     if (r) r.style.display = 'none';
   }
+}
+
+async function renombrarDoc() {
+  if (!selectedDocId || !supabaseClient) return;
+  const nuevo = document.getElementById('edit-nombre').value.trim();
+  if (!nuevo) { showToast('El nombre no puede estar vacío', 'warning'); return; }
+  // Avisar si ya existe otro documento con ese nombre
+  const dup = uploadedDocs.find(d => d.id !== selectedDocId && d.nombre.toLowerCase() === nuevo.toLowerCase());
+  if (dup && !confirm('Ya existe otro documento llamado "' + nuevo + '". ¿Renombrar de todos modos?')) return;
+  try {
+    const { error } = await supabaseClient.from('documentos').update({ nombre: nuevo }).eq('id', selectedDocId);
+    if (error) throw error;
+    showToast('Documento renombrado', 'success');
+    await loadDocuments();
+    renderFileCards(); // mantiene la selección actual resaltada
+    const t = document.getElementById('selected-doc-title');
+    if (t) t.textContent = '📄 ' + nuevo;
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+async function eliminarDoc() {
+  if (!selectedDocId || !supabaseClient) return;
+  const doc = uploadedDocs.find(d => d.id === selectedDocId);
+  if (!doc) return;
+  if (!confirm('¿Eliminar DEFINITIVAMENTE "' + doc.nombre + '"? Se borra el archivo y no se puede deshacer.')) return;
+  try {
+    if (doc.storage_path) { try { await supabaseClient.storage.from('documentos').remove([doc.storage_path]); } catch(e) {} }
+    const { error } = await supabaseClient.from('documentos').delete().eq('id', doc.id);
+    if (error) throw error;
+    selectedDocId = null;
+    document.getElementById('selected-doc-panel').style.display = 'none';
+    showToast('Documento eliminado', 'success');
+    await loadDocuments();
+    loadDocumentCount();
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
 }
 
 async function processDocWithAI() {
