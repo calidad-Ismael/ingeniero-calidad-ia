@@ -9,6 +9,9 @@
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script>if(window.pdfjsLib){pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';}</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -466,8 +469,15 @@ async function sendChat() {
     let docCtx = '';
     if (supabaseClient) {
       try {
-        const { data } = await supabaseClient.from('documentos').select('nombre,tipo').limit(20);
-        if (data && data.length) docCtx = '\n\nDocumentos en el sistema:\n' + data.map(d => '- ' + d.nombre + ' (' + d.tipo + ')').join('\n');
+        const { data } = await supabaseClient.from('documentos').select('nombre,tipo,carpeta,contenido_texto').limit(30);
+        if (data && data.length) {
+          docCtx = '\n\n=== DOCUMENTOS CARGADOS EN EL SISTEMA ===\nPodés usar el contenido de estos documentos para responder. Si la respuesta está en un documento, citá el nombre del archivo.\n\n' +
+            data.map(d => {
+              let bloque = '📄 ' + d.nombre + ' (' + d.tipo + ', carpeta: ' + (d.carpeta || 'General') + ')';
+              if (d.contenido_texto) bloque += '\nContenido:\n' + d.contenido_texto.slice(0, 6000);
+              return bloque;
+            }).join('\n\n---\n\n');
+        }
       } catch(e) {}
     }
     const sys = 'Eres un Ingeniero de Calidad experto en FSSC 22000 v6, BRC, IFS, ISO 22000, HACCP, BPM e inocuidad alimentaria, con foco en fabricación de envases. Respondes en español de forma DIRECTA y CONCISA, sin rodeos ni introducciones largas. Vas al grano: das la respuesta primero y luego, solo si aporta, una breve justificación. Citás la cláusula normativa exacta cuando corresponde. Usás viñetas cortas para enumerar y negritas solo para lo clave. Evitás frases de relleno como "es importante destacar" o "en resumen".' + docCtx;
@@ -640,6 +650,30 @@ function setupDropZone() {
 
 function handleFileSelect(e) { if (e.target.files.length) uploadFiles(Array.from(e.target.files)); }
 
+// Extrae el texto interno de un archivo PDF o Word (.docx) en el navegador
+async function extraerTexto(file, ext) {
+  try {
+    if (ext === 'pdf' && window.pdfjsLib) {
+      const buf = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+      let texto = '';
+      const maxPag = Math.min(pdf.numPages, 40); // límite para no excederse
+      for (let p = 1; p <= maxPag; p++) {
+        const page = await pdf.getPage(p);
+        const content = await page.getTextContent();
+        texto += content.items.map(it => it.str).join(' ') + '\n';
+      }
+      return texto.trim();
+    }
+    if ((ext === 'docx' || ext === 'doc') && window.mammoth) {
+      const buf = await file.arrayBuffer();
+      const result = await mammoth.extractRawText({ arrayBuffer: buf });
+      return (result.value || '').trim();
+    }
+  } catch(e) { console.warn('No se pudo extraer texto de ' + file.name + ':', e); }
+  return '';
+}
+
 async function uploadFiles(files) {
   if (!supabaseClient) { showToast('Configure Supabase primero', 'error'); return; }
   document.getElementById('upload-progress').style.display = 'block';
@@ -651,6 +685,10 @@ async function uploadFiles(files) {
       const ext = file.name.split('.').pop().toLowerCase();
       const carpetaDest = (carpetaActual === 'todas') ? 'General' : carpetaActual;
       const path = carpetaDest + '/' + Date.now() + '_' + file.name;
+      // Extraer texto interno (PDF / Word) para que la IA pueda leer el contenido
+      document.getElementById('upload-status').textContent = 'Leyendo contenido de ' + file.name + '...';
+      const contenidoTexto = await extraerTexto(file, ext);
+      document.getElementById('upload-status').textContent = 'Subiendo ' + file.name + '...';
       const { error: se } = await supabaseClient.storage.from('documentos').upload(path, file);
       if (se) throw se;
       const { data: ud } = supabaseClient.storage.from('documentos').getPublicUrl(path);
@@ -660,10 +698,12 @@ async function uploadFiles(files) {
       const { error: de } = await supabaseClient.from('documentos').insert({
         nombre: file.name, tipo: ext.toUpperCase(),
         storage_url: publicUrl, storage_path: path,
-        tamano: file.size, carpeta: carpetaDest, creado_en: new Date().toISOString()
+        tamano: file.size, carpeta: carpetaDest,
+        contenido_texto: contenidoTexto ? contenidoTexto.slice(0, 50000) : null,
+        creado_en: new Date().toISOString()
       });
       if (de) throw de;
-      showToast(file.name + ' subido correctamente', 'success');
+      showToast(file.name + (contenidoTexto ? ' subido (contenido leído ✓)' : ' subido') , 'success');
     } catch(e) { showToast('Error subiendo ' + file.name + ': ' + e.message, 'error'); }
   }
   document.getElementById('progress-fill').style.width = '100%';
@@ -734,8 +774,9 @@ async function processDocWithAI() {
   const btn = document.getElementById('proc-btn-text');
   btn.innerHTML = '<span class="spinner"></span> Procesando...';
   try {
-    const sys = 'Eres un experto en gestión de calidad e inocuidad alimentaria (FSSC 22000, BRC, IFS, ISO 22000). Analiza documentos técnicos y brinda respuestas detalladas y estructuradas en español.';
-    const msgs = [{ role: 'user', content: 'Documento: "' + doc.nombre + '" (tipo: ' + doc.tipo + ')\n\nInstrucción: ' + instr + '\n\nBrinda un análisis profesional basado en el nombre, tipo e instrucción indicada.' }];
+    const sys = 'Eres un experto en gestión de calidad e inocuidad alimentaria (FSSC 22000, BRC, IFS, ISO 22000). Analiza documentos técnicos y brinda respuestas claras, directas y estructuradas en español, sin rodeos.';
+    const contenido = doc.contenido_texto ? '\n\nCONTENIDO DEL DOCUMENTO:\n' + doc.contenido_texto.slice(0, 30000) : '\n\n(No hay texto extraído de este documento; analizá según el nombre y tu conocimiento.)';
+    const msgs = [{ role: 'user', content: 'Documento: "' + doc.nombre + '" (tipo: ' + doc.tipo + ')\n\nInstrucción: ' + instr + contenido }];
     const result = await callAI(msgs, sys);
     if (result) {
       const panel = document.getElementById('ai-result-panel');
@@ -1088,13 +1129,14 @@ async function procesarMail() {
     let docsExistentes = [];
     if (supabaseClient) {
       try {
-        const { data } = await supabaseClient.from('documentos').select('id,nombre,tipo,carpeta,storage_url').limit(200);
+        const { data } = await supabaseClient.from('documentos').select('id,nombre,tipo,carpeta,storage_url,contenido_texto').limit(200);
         docsExistentes = data || [];
       } catch(e) {}
     }
     window._docsExistentes = docsExistentes;
     const listaDocs = docsExistentes.length
-      ? docsExistentes.map((d, i) => i + ': "' + d.nombre + '" (' + (d.tipo || '') + ', carpeta: ' + (d.carpeta || 'General') + ')').join('\n')
+      ? docsExistentes.map((d, i) => i + ': "' + d.nombre + '" (' + (d.tipo || '') + ', carpeta: ' + (d.carpeta || 'General') + ')' +
+          (d.contenido_texto ? '\n   Contenido: ' + d.contenido_texto.slice(0, 2000).replace(/\n+/g, ' ') : '')).join('\n')
       : '(no hay documentos cargados en el sistema)';
     const sys = 'Eres un Ingeniero de Calidad experto en FSSC 22000 v6, BRC e ISO 22000, especializado en fabricación de envases. Analizas correos de clientes que piden documentación (certificados, especificaciones, fichas técnicas, etc). Tu trabajo: (1) entender qué piden, (2) buscar en la lista de documentos cargados cuáles ya existen y sirven para responder, (3) decidir cuáles hay que generar de cero, (4) redactar una respuesta profesional, cordial y CONCISA en español. Responde ÚNICAMENTE con JSON válido, sin texto adicional ni markdown.';
     const msg = 'DOCUMENTOS CARGADOS EN EL SISTEMA (índice: nombre):\n' + listaDocs + '\n\n' +
