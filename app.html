@@ -114,7 +114,10 @@ textarea.form-control{resize:vertical;min-height:80px}
 }
 .msg.ai .msg-avatar{background:var(--primary);color:#fff}
 .msg.user .msg-avatar{background:var(--accent);color:var(--primary)}
-.msg-bubble{padding:12px 16px;border-radius:12px;font-size:14px;line-height:1.6;white-space:pre-wrap;word-break:break-word}
+.msg-bubble{padding:12px 16px;border-radius:12px;font-size:14px;line-height:1.6;word-break:break-word}
+.msg.user .msg-bubble{white-space:pre-wrap}
+.msg-bubble p:first-child{margin-top:0}
+.msg-bubble p:last-child{margin-bottom:0}
 .msg.ai .msg-bubble{background:var(--bg);color:var(--text);border-radius:4px 12px 12px 12px}
 .msg.user .msg-bubble{background:var(--primary);color:#fff;border-radius:12px 4px 12px 12px}
 .typing-dots{display:flex;gap:4px;align-items:center;padding:8px 4px}
@@ -467,7 +470,7 @@ async function sendChat() {
         if (data && data.length) docCtx = '\n\nDocumentos en el sistema:\n' + data.map(d => '- ' + d.nombre + ' (' + d.tipo + ')').join('\n');
       } catch(e) {}
     }
-    const sys = 'Eres un Ingeniero de Calidad experto en FSSC 22000, BRC Food, IFS Food, ISO 22000, HACCP, BPM y normas de inocuidad alimentaria. Respondes en español de manera profesional, clara y detallada. Brindas recomendaciones prácticas y citas de cláusulas normativas cuando corresponde.' + docCtx;
+    const sys = 'Eres un Ingeniero de Calidad experto en FSSC 22000 v6, BRC, IFS, ISO 22000, HACCP, BPM e inocuidad alimentaria, con foco en fabricación de envases. Respondes en español de forma DIRECTA y CONCISA, sin rodeos ni introducciones largas. Vas al grano: das la respuesta primero y luego, solo si aporta, una breve justificación. Citás la cláusula normativa exacta cuando corresponde. Usás viñetas cortas para enumerar y negritas solo para lo clave. Evitás frases de relleno como "es importante destacar" o "en resumen".' + docCtx;
     const resp = await callAI([...chatHistory], sys);
     removeTyping(tid);
     if (resp) { appendMsg('ai', resp); chatHistory.push({ role: 'assistant', content: resp }); }
@@ -484,7 +487,8 @@ function appendMsg(role, text) {
   const msgs = document.getElementById('chat-messages');
   const div = document.createElement('div');
   div.className = 'msg ' + role;
-  div.innerHTML = '<div class="msg-avatar">' + (role === 'ai' ? 'IA' : 'Ud') + '</div><div class="msg-bubble">' + escapeHtml(text) + '</div>';
+  const body = role === 'ai' ? renderMarkdown(text) : escapeHtml(text);
+  div.innerHTML = '<div class="msg-avatar">' + (role === 'ai' ? 'IA' : 'Ud') + '</div><div class="msg-bubble">' + body + '</div>';
   msgs.appendChild(div);
   msgs.scrollTop = msgs.scrollHeight;
 }
@@ -736,7 +740,7 @@ async function processDocWithAI() {
     if (result) {
       const panel = document.getElementById('ai-result-panel');
       panel.style.display = 'block';
-      panel.innerHTML = '<div style="font-weight:700;color:var(--primary);margin-bottom:10px">🤖 Resultado del análisis IA:</div>' + escapeHtml(result);
+      panel.innerHTML = '<div style="font-weight:700;color:var(--primary);margin-bottom:10px">🤖 Resultado del análisis IA:</div>' + renderMarkdown(result);
       panel.scrollIntoView({ behavior: 'smooth' });
     }
   } catch(e) { showToast('Error: ' + e.message, 'error'); }
@@ -858,7 +862,7 @@ async function generarDocumento() {
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">' +
       '<h3 style="color:var(--primary)">✅ Documento generado: ' + escapeHtml(subtipo) + '</h3>' +
       '<button class="btn btn-accent" onclick="downloadDocument()">⬇️ Descargar ' + escapeHtml(tipo) + '</button></div>' +
-      '<div style="background:var(--bg);border-radius:8px;padding:16px;font-size:13px;line-height:1.7;max-height:400px;overflow-y:auto;white-space:pre-wrap">' + escapeHtml(aiContent) + '</div>';
+      '<div style="background:var(--bg);border-radius:8px;padding:16px;font-size:13px;line-height:1.7;max-height:400px;overflow-y:auto">' + renderMarkdown(aiContent) + '</div>';
     panel.scrollIntoView({ behavior: 'smooth' });
     window._lastAIContent = aiContent;
     window._lastMeta = metadata;
@@ -988,27 +992,45 @@ function generatePdf(metadata, aiContent) {
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    aiContent.split('\n').forEach(line => {
+    const lines = aiContent.split('\n');
+    let tabla = [];
+    const flushTabla = () => {
+      if (!tabla.length) return;
+      doc.autoTable({ startY: y, head: [tabla[0]], body: tabla.slice(1), theme: 'grid', headStyles: { fillColor: [0, 51, 153], textColor: 255, fontStyle: 'bold', fontSize: 9 }, styles: { fontSize: 9, cellPadding: 2 }, margin: { left: margin, right: margin } });
+      y = doc.lastAutoTable.finalY + 6;
+      tabla = [];
+    };
+    lines.forEach(line => {
+      if (line.startsWith('TABLA|')) { flushTabla(); tabla = [line.split('|').slice(1).map(c => c.trim())]; return; }
+      if (line.startsWith('FILA|')) { if (tabla.length) tabla.push(line.split('|').slice(1).map(c => c.trim())); return; }
+      flushTabla();
       if (y > 270) { doc.addPage(); y = 20; }
-      if (line.startsWith('# ') || line.startsWith('## ') || line.startsWith('### ')) {
+      const clean = s => s.replace(/\*\*(.+?)\*\*/g, '$1').replace(/\*/g, '');
+      if (/^#{1,3}\s/.test(line)) {
         y += 4;
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(line.startsWith('# ') ? 13 : line.startsWith('## ') ? 11 : 10);
         doc.setTextColor(0, 51, 153);
-        const wrapped = doc.splitTextToSize(line.replace(/^#+\s/, ''), maxW);
+        const wrapped = doc.splitTextToSize(clean(line.replace(/^#+\s/, '')), maxW);
         doc.text(wrapped, margin, y);
         y += wrapped.length * 5 + 2;
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(10);
         doc.setTextColor(0, 0, 0);
+      } else if (/^\s*[-•*]\s/.test(line)) {
+        const wrapped = doc.splitTextToSize(clean(line.replace(/^\s*[-•*]\s/, '')), maxW - 6);
+        doc.text('•', margin, y);
+        doc.text(wrapped, margin + 5, y);
+        y += wrapped.length * 5;
       } else if (line.trim() === '') {
         y += 3;
       } else {
-        const wrapped = doc.splitTextToSize(line.replace(/\*\*/g, ''), maxW);
+        const wrapped = doc.splitTextToSize(clean(line), maxW);
         doc.text(wrapped, margin, y);
         y += wrapped.length * 5;
       }
     });
+    flushTabla();
     doc.save((metadata.subtipo.replace(/\s+/g, '_')) + '_' + (metadata.codigo || 'DOC') + '_' + metadata.fecha + '.pdf');
     showToast('Documento PDF descargado', 'success');
   } catch(e) { showToast('Error generando PDF: ' + e.message, 'error'); }
@@ -1044,6 +1066,10 @@ function renderMails() {
         </div>
         <textarea id="mail-reply" placeholder="La respuesta generada aparecerá aquí..."></textarea>
       </div>
+      <div class="card" id="mail-existentes-card" style="display:none">
+        <div class="card-title">📎 Documentos encontrados en el sistema</div>
+        <div id="mail-existentes-list"></div>
+      </div>
       <div class="card" id="mail-docs-card" style="display:none">
         <div class="card-title">📄 Documentos a generar</div>
         <div id="mail-docs-list"></div>
@@ -1058,8 +1084,23 @@ async function procesarMail() {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Analizando con IA...';
   try {
-    const sys = 'Eres un asistente experto en gestión de calidad e inocuidad alimentaria (FSSC 22000). Analizas correos relacionados con certificaciones, auditorías, documentación técnica y requisitos de clientes. Responde ÚNICAMENTE con JSON válido, sin texto adicional.';
-    const msg = 'Analiza este correo y devuelve exactamente este JSON:\n{"remitente":"nombre y email","asunto":"asunto del correo","respuesta_email":"respuesta profesional completa en español","documentos_a_generar":[{"tipo":"Word|Excel|PDF","subtipo":"Especificación Técnica|Certificado de Calidad|Informe de Análisis|Procedimiento|Acta|Registro de Control|Planilla de Auditoría|Matriz de Riesgos|Reporte de Hallazgos|Certificado Formal","cliente":"nombre","producto":"producto","descripcion":"descripcion detallada"}]}\n\nCorreo:\n' + text;
+    // Buscar documentos existentes para que la IA pueda identificar cuáles adjuntar
+    let docsExistentes = [];
+    if (supabaseClient) {
+      try {
+        const { data } = await supabaseClient.from('documentos').select('id,nombre,tipo,carpeta,storage_url').limit(200);
+        docsExistentes = data || [];
+      } catch(e) {}
+    }
+    window._docsExistentes = docsExistentes;
+    const listaDocs = docsExistentes.length
+      ? docsExistentes.map((d, i) => i + ': "' + d.nombre + '" (' + (d.tipo || '') + ', carpeta: ' + (d.carpeta || 'General') + ')').join('\n')
+      : '(no hay documentos cargados en el sistema)';
+    const sys = 'Eres un Ingeniero de Calidad experto en FSSC 22000 v6, BRC e ISO 22000, especializado en fabricación de envases. Analizas correos de clientes que piden documentación (certificados, especificaciones, fichas técnicas, etc). Tu trabajo: (1) entender qué piden, (2) buscar en la lista de documentos cargados cuáles ya existen y sirven para responder, (3) decidir cuáles hay que generar de cero, (4) redactar una respuesta profesional, cordial y CONCISA en español. Responde ÚNICAMENTE con JSON válido, sin texto adicional ni markdown.';
+    const msg = 'DOCUMENTOS CARGADOS EN EL SISTEMA (índice: nombre):\n' + listaDocs + '\n\n' +
+      'Analiza el correo y devuelve exactamente este JSON:\n' +
+      '{"remitente":"nombre y email si aparece","asunto":"asunto sugerido para responder","respuesta_email":"respuesta profesional completa y concisa en español, mencionando los documentos que se adjuntan","documentos_existentes":[indices numericos de los documentos cargados que responden al pedido],"documentos_a_generar":[{"tipo":"Word|Excel|PDF","subtipo":"Especificación Técnica|Certificado de Calidad|Informe de Análisis|Procedimiento|Acta|Registro de Control|Planilla de Auditoría|Matriz de Riesgos|Reporte de Hallazgos|Certificado Formal","cliente":"nombre","producto":"producto","descripcion":"qué debe contener"}]}\n\n' +
+      'IMPORTANTE: si un documento pedido YA EXISTE en la lista, ponelo en "documentos_existentes" (no lo generes de nuevo). Solo poné en "documentos_a_generar" lo que realmente falta.\n\nCorreo recibido:\n' + text;
     const response = await callAI([{ role: 'user', content: msg }], sys);
     if (!response) throw new Error('Sin respuesta de la IA');
     let parsed;
@@ -1071,6 +1112,10 @@ async function procesarMail() {
     document.getElementById('mail-info-grid').innerHTML =
       '<div><span class="form-label">Remitente</span><p style="font-size:14px">' + escapeHtml(parsed.remitente || '—') + '</p></div>' +
       '<div><span class="form-label">Asunto</span><p style="font-size:14px">' + escapeHtml(parsed.asunto || '—') + '</p></div>';
+    // Documentos existentes que la IA identificó para adjuntar
+    const existentesIdx = Array.isArray(parsed.documentos_existentes) ? parsed.documentos_existentes : [];
+    const existentes = existentesIdx.map(i => docsExistentes[i]).filter(Boolean);
+    renderMailExistentes(existentes);
     const reply = parsed.respuesta_email || '';
     document.getElementById('mail-reply').value = reply;
     const su = encodeURIComponent(parsed.asunto ? 'RE: ' + parsed.asunto : 'Respuesta');
@@ -1096,6 +1141,22 @@ async function procesarMail() {
     showToast('Mail procesado correctamente', 'success');
   } catch(e) { showToast('Error: ' + e.message, 'error'); }
   finally { btn.disabled = false; btn.innerHTML = '📧 Procesar Mail con IA'; }
+}
+
+function renderMailExistentes(existentes) {
+  const card = document.getElementById('mail-existentes-card');
+  const list = document.getElementById('mail-existentes-list');
+  if (!card || !list) return;
+  if (!existentes || !existentes.length) { card.style.display = 'none'; list.innerHTML = ''; return; }
+  const icons = { PDF: '📄', DOCX: '📝', XLSX: '📊' };
+  card.style.display = 'block';
+  list.innerHTML = existentes.map(d =>
+    '<div class="card" style="margin-bottom:10px;border-left:4px solid var(--success)">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">' +
+    '<div><strong>' + (icons[d.tipo] || '📄') + ' ' + escapeHtml(d.nombre) + '</strong><br>' +
+    '<span style="font-size:13px;color:var(--text-light)">' + escapeHtml(d.tipo || '') + ' · carpeta: ' + escapeHtml(d.carpeta || 'General') + '</span></div>' +
+    '<a class="btn btn-success btn-sm" href="' + escapeHtml(d.storage_url) + '" target="_blank" download>⬇️ Descargar</a></div></div>'
+  ).join('');
 }
 
 function copyReply() {
@@ -1370,6 +1431,31 @@ async function exportarHallazgosWord() {
 function escapeHtml(str) {
   if (str === null || str === undefined) return '';
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// Convierte markdown a HTML limpio (encabezados, negritas, listas, tablas simples)
+function renderMarkdown(text) {
+  if (!text) return '';
+  const esc = s => escapeHtml(s)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*(?!\s)([^*]+?)\*(?!\*)/g, '$1<em>$2</em>')
+    .replace(/`([^`]+?)`/g, '<code style="background:#eef1f6;padding:1px 5px;border-radius:4px;font-size:13px">$1</code>');
+  const lines = text.split('\n');
+  let html = '', listType = null;
+  const closeList = () => { if (listType) { html += '</' + listType + '>'; listType = null; } };
+  for (let raw of lines) {
+    const line = raw.replace(/\s+$/, '');
+    let m;
+    if (/^###\s+/.test(line)) { closeList(); html += '<h4 style="color:var(--primary);margin:12px 0 4px;font-size:14px">' + esc(line.replace(/^###\s+/, '')) + '</h4>'; }
+    else if (/^##\s+/.test(line)) { closeList(); html += '<h3 style="color:var(--primary);margin:14px 0 6px;font-size:15px">' + esc(line.replace(/^##\s+/, '')) + '</h3>'; }
+    else if (/^#\s+/.test(line)) { closeList(); html += '<h2 style="color:var(--primary);margin:14px 0 6px;font-size:16px">' + esc(line.replace(/^#\s+/, '')) + '</h2>'; }
+    else if ((m = line.match(/^\s*[-•*]\s+(.*)/))) { if (listType !== 'ul') { closeList(); html += '<ul style="margin:4px 0 8px 18px">'; listType = 'ul'; } html += '<li style="margin:2px 0">' + esc(m[1]) + '</li>'; }
+    else if ((m = line.match(/^\s*\d+[.)]\s+(.*)/))) { if (listType !== 'ol') { closeList(); html += '<ol style="margin:4px 0 8px 18px">'; listType = 'ol'; } html += '<li style="margin:2px 0">' + esc(m[1]) + '</li>'; }
+    else if (line.trim() === '') { closeList(); html += '<div style="height:6px"></div>'; }
+    else { closeList(); html += '<p style="margin:4px 0">' + esc(line) + '</p>'; }
+  }
+  closeList();
+  return html;
 }
 
 function formatDate(dateStr) {
