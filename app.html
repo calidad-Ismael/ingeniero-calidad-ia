@@ -291,6 +291,7 @@ textarea.form-control{resize:vertical;min-height:80px}
 <script>
 // ===== GLOBALS =====
 let supabaseClient = null;
+let carpetaActual = 'todas';
 let currentModule = '';
 let selectedDocId = null;
 let hallazgos = [];
@@ -508,35 +509,115 @@ function removeTyping(id) { const el = document.getElementById(id); if (el) el.r
 function renderDocumentos() {
   document.getElementById('content').innerHTML = `
     <div class="module-header"><h2>📁 Gestión de Documentos</h2><p>Suba, gestione y procese sus documentos técnicos con IA</p></div>
-    <div class="card">
-      <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
-        <div class="drop-zone-icon">📂</div>
-        <p><strong>Haga clic o arrastre archivos aquí</strong></p>
-        <p>Formatos aceptados: PDF, DOCX, XLSX — máx. 50 MB por archivo</p>
+    <div style="display:flex;gap:16px;align-items:flex-start">
+      <!-- Panel de carpetas -->
+      <div style="min-width:200px;max-width:220px">
+        <div class="card" style="padding:12px">
+          <div style="font-weight:700;font-size:13px;color:var(--primary);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">📂 Carpetas</div>
+          <div id="carpetas-lista"></div>
+          <div style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px">
+            <input type="text" id="nueva-carpeta-input" class="form-control" style="font-size:12px;padding:6px 8px;margin-bottom:6px" placeholder="Nueva carpeta...">
+            <button class="btn btn-primary" style="width:100%;font-size:12px;padding:6px" onclick="crearCarpeta()">+ Crear carpeta</button>
+          </div>
+        </div>
       </div>
-      <input type="file" id="file-input" style="display:none" accept=".pdf,.docx,.xlsx" multiple onchange="handleFileSelect(event)">
-    </div>
-    <div id="upload-progress" style="display:none" class="card">
-      <p id="upload-status" style="font-size:14px;margin-bottom:8px">Subiendo...</p>
-      <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
-    </div>
-    <div id="file-cards-area">
-      <div style="text-align:center;padding:30px;color:var(--text-light)"><span class="spinner spinner-dark"></span><p style="margin-top:12px">Cargando documentos...</p></div>
-    </div>
-    <div id="selected-doc-panel" style="display:none" class="card">
-      <div class="card-title" id="selected-doc-title"></div>
-      <div class="form-group">
-        <label class="form-label">Instrucción para la IA</label>
-        <textarea class="form-control" id="ai-instruction" style="min-height:80px" placeholder="Ej: Resume este documento, extrae los puntos clave, identifica los requisitos normativos..."></textarea>
+      <!-- Contenido principal -->
+      <div style="flex:1;min-width:0">
+        <div class="card">
+          <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+            <div class="drop-zone-icon">📂</div>
+            <p><strong>Haga clic o arrastre archivos aquí</strong></p>
+            <p style="font-size:13px;margin-top:4px">Se subirán a: <strong id="carpeta-destino-label">Todas</strong></p>
+            <p style="font-size:12px;color:var(--text-light)">PDF, DOCX, XLSX — máx. 50 MB</p>
+          </div>
+          <input type="file" id="file-input" style="display:none" accept=".pdf,.docx,.xlsx" multiple onchange="handleFileSelect(event)">
+        </div>
+        <div id="upload-progress" style="display:none" class="card">
+          <p id="upload-status" style="font-size:14px;margin-bottom:8px">Subiendo...</p>
+          <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+        </div>
+        <div id="file-cards-area">
+          <div style="text-align:center;padding:30px;color:var(--text-light)"><span class="spinner spinner-dark"></span><p style="margin-top:12px">Cargando documentos...</p></div>
+        </div>
+        <div id="selected-doc-panel" style="display:none" class="card">
+          <div class="card-title" id="selected-doc-title"></div>
+          <div class="form-group">
+            <label class="form-label">Mover a carpeta</label>
+            <select class="form-control" id="mover-carpeta-select" style="margin-bottom:8px"></select>
+            <button class="btn btn-secondary btn-sm" onclick="moverDocACarpeta()" style="margin-bottom:12px">📁 Mover</button>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Instrucción para la IA</label>
+            <textarea class="form-control" id="ai-instruction" style="min-height:80px" placeholder="Ej: Resume este documento, extrae los puntos clave, identifica los requisitos normativos..."></textarea>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn btn-primary" onclick="processDocWithAI()"><span id="proc-btn-text">🤖 Procesar con IA</span></button>
+            <button class="btn btn-danger btn-sm" onclick="markObsolete()">🗄️ Pasar a Obsoleto</button>
+          </div>
+        </div>
+        <div id="ai-result-panel"></div>
       </div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <button class="btn btn-primary" onclick="processDocWithAI()"><span id="proc-btn-text">🤖 Procesar con IA</span></button>
-        <button class="btn btn-danger btn-sm" onclick="markObsolete()">🗄️ Pasar a Obsoleto</button>
-      </div>
-    </div>
-    <div id="ai-result-panel"></div>`;
+    </div>`;
   setupDropZone();
   loadDocuments();
+}
+
+function getCarpetas() {
+  const raw = localStorage.getItem('iq_carpetas');
+  return raw ? JSON.parse(raw) : ['General', 'Especificaciones', 'Certificados', 'Procedimientos', 'Auditorías'];
+}
+
+function saveCarpetas(list) {
+  localStorage.setItem('iq_carpetas', JSON.stringify(list));
+}
+
+function renderCarpetas() {
+  const lista = document.getElementById('carpetas-lista');
+  if (!lista) return;
+  const carpetas = getCarpetas();
+  const todos = [{ id: 'todas', label: '📋 Todos los documentos' }, ...carpetas.map(c => ({ id: c, label: '📁 ' + c }))];
+  lista.innerHTML = todos.map(c =>
+    `<div onclick="filtrarCarpeta('${c.id}')" style="padding:7px 10px;border-radius:6px;cursor:pointer;font-size:13px;margin-bottom:2px;background:${carpetaActual===c.id?'var(--primary)':'transparent'};color:${carpetaActual===c.id?'#fff':'var(--text)'};transition:.15s">${c.label}</div>`
+  ).join('');
+  // Actualizar label destino
+  const lbl = document.getElementById('carpeta-destino-label');
+  if (lbl) lbl.textContent = carpetaActual === 'todas' ? 'General' : carpetaActual;
+  // Actualizar select de mover
+  const sel = document.getElementById('mover-carpeta-select');
+  if (sel) sel.innerHTML = carpetas.map(c => `<option value="${c}">${c}</option>`).join('');
+}
+
+function filtrarCarpeta(id) {
+  carpetaActual = id;
+  renderCarpetas();
+  renderFileCards();
+}
+
+function crearCarpeta() {
+  const inp = document.getElementById('nueva-carpeta-input');
+  const nombre = inp.value.trim();
+  if (!nombre) return;
+  const carpetas = getCarpetas();
+  if (carpetas.includes(nombre)) { showToast('Esa carpeta ya existe', 'warning'); return; }
+  carpetas.push(nombre);
+  saveCarpetas(carpetas);
+  inp.value = '';
+  carpetaActual = nombre;
+  renderCarpetas();
+  showToast('Carpeta "' + nombre + '" creada', 'success');
+}
+
+async function moverDocACarpeta() {
+  if (!selectedDocId || !supabaseClient) return;
+  const sel = document.getElementById('mover-carpeta-select');
+  const carpeta = sel ? sel.value : '';
+  if (!carpeta) return;
+  try {
+    const { error } = await supabaseClient.from('documentos').update({ carpeta }).eq('id', selectedDocId);
+    if (error) throw error;
+    showToast('Documento movido a "' + carpeta + '"', 'success');
+    await loadDocuments();
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
 }
 
 function setupDropZone() {
@@ -564,18 +645,18 @@ async function uploadFiles(files) {
     document.getElementById('progress-fill').style.width = Math.round(((i + 0.5) / files.length) * 100) + '%';
     try {
       const ext = file.name.split('.').pop().toLowerCase();
-      const path = 'docs/' + Date.now() + '_' + file.name;
+      const carpetaDest = (carpetaActual === 'todas') ? 'General' : carpetaActual;
+      const path = carpetaDest + '/' + Date.now() + '_' + file.name;
       const { error: se } = await supabaseClient.storage.from('documentos').upload(path, file);
       if (se) throw se;
       const { data: ud } = supabaseClient.storage.from('documentos').getPublicUrl(path);
-      // Asegurar que la URL tenga /public/ para acceso público
       const publicUrl = ud.publicUrl.includes('/object/public/')
         ? ud.publicUrl
         : ud.publicUrl.replace('/object/', '/object/public/');
       const { error: de } = await supabaseClient.from('documentos').insert({
         nombre: file.name, tipo: ext.toUpperCase(),
         storage_url: publicUrl, storage_path: path,
-        tamano: file.size, creado_en: new Date().toISOString()
+        tamano: file.size, carpeta: carpetaDest, creado_en: new Date().toISOString()
       });
       if (de) throw de;
       showToast(file.name + ' subido correctamente', 'success');
@@ -608,16 +689,22 @@ async function loadDocuments() {
 function renderFileCards() {
   const area = document.getElementById('file-cards-area');
   if (!area) return;
+  renderCarpetas();
+  const filtered = carpetaActual === 'todas'
+    ? uploadedDocs
+    : uploadedDocs.filter(d => (d.carpeta || 'General') === carpetaActual);
   if (!uploadedDocs.length) { area.innerHTML = '<div class="empty-state"><div class="empty-icon">📂</div><p>No hay documentos. Suba su primer archivo.</p></div>'; return; }
+  if (!filtered.length) { area.innerHTML = '<div class="empty-state"><div class="empty-icon">📂</div><p>No hay documentos en esta carpeta.</p></div>'; return; }
   const icons = { PDF: '📄', DOCX: '📝', XLSX: '📊' };
   const bc = { PDF: 'badge-pdf', DOCX: 'badge-docx', XLSX: 'badge-xlsx' };
-  area.innerHTML = '<h3 style="margin-bottom:14px;color:var(--primary);font-size:15px">📋 Documentos (' + uploadedDocs.length + ')</h3><div class="file-cards">' +
-    uploadedDocs.map(doc => '<div class="file-card ' + (selectedDocId === doc.id ? 'selected' : '') + '" onclick="selectDoc(\'' + doc.id + '\')">' +
+  const titulo = carpetaActual === 'todas' ? 'Todos los documentos' : '📁 ' + carpetaActual;
+  area.innerHTML = '<h3 style="margin-bottom:14px;color:var(--primary);font-size:15px">' + titulo + ' (' + filtered.length + ')</h3><div class="file-cards">' +
+    filtered.map(doc => '<div class="file-card ' + (selectedDocId === doc.id ? 'selected' : '') + '" onclick="selectDoc(\'' + doc.id + '\')">' +
       '<div class="file-card-icon">' + (icons[doc.tipo] || '📄') + '</div>' +
       '<div class="file-card-name">' + escapeHtml(doc.nombre) + '</div>' +
       '<div class="file-card-meta"><span class="badge ' + (bc[doc.tipo] || '') + '">' + escapeHtml(doc.tipo || '') + '</span>' +
       (doc.tamano ? ' · ' + Math.round(doc.tamano / 1024) + ' KB' : '') + '</div>' +
-      '<div class="file-card-meta" style="margin-top:4px">' + formatDate(doc.creado_en) + '</div></div>').join('') + '</div>';
+      '<div class="file-card-meta" style="margin-top:4px;color:var(--text-light)">' + (doc.carpeta || 'General') + ' · ' + formatDate(doc.creado_en) + '</div></div>').join('') + '</div>';
 }
 
 function selectDoc(id) {
