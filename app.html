@@ -1,0 +1,1291 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ingeniero de Calidad IA</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://unpkg.com/docx@8.5.0/build/index.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --primary:#003399;
+  --secondary:#0052CC;
+  --accent:#FFB800;
+  --bg:#F4F6F9;
+  --white:#ffffff;
+  --text:#1a1a2e;
+  --text-light:#6b7280;
+  --border:#e5e7eb;
+  --success:#10b981;
+  --error:#ef4444;
+  --warning:#f59e0b;
+  --sidebar-w:260px;
+}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);display:flex;min-height:100vh;overflow-x:hidden}
+#sidebar{
+  width:var(--sidebar-w);min-width:var(--sidebar-w);background:var(--primary);
+  display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;
+  z-index:100;transition:transform .3s;
+}
+#sidebar-logo{padding:24px 20px 20px;border-bottom:1px solid rgba(255,255,255,.15)}
+#sidebar-logo .logo-badge{
+  background:var(--accent);color:var(--primary);font-weight:800;font-size:22px;
+  border-radius:10px;padding:6px 14px;display:inline-block;letter-spacing:1px;
+}
+#sidebar-logo p{color:rgba(255,255,255,.7);font-size:11px;margin-top:6px;letter-spacing:.5px}
+#sidebar-nav{flex:1;padding:16px 0;overflow-y:auto}
+.nav-item{
+  display:flex;align-items:center;gap:12px;padding:13px 20px;cursor:pointer;
+  color:rgba(255,255,255,.75);transition:all .2s;border-left:3px solid transparent;
+  font-size:14px;font-weight:500;
+}
+.nav-item:hover{background:rgba(255,255,255,.1);color:#fff}
+.nav-item.active{background:rgba(255,255,255,.15);color:#fff;border-left-color:var(--accent)}
+.nav-item .nav-icon{font-size:18px;width:22px;text-align:center}
+#sidebar-footer{padding:16px 20px;border-top:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.6);font-size:12px}
+#doc-count{font-size:22px;font-weight:700;color:var(--accent);display:block}
+#main{margin-left:var(--sidebar-w);flex:1;display:flex;flex-direction:column;min-height:100vh}
+#topbar{
+  background:var(--white);border-bottom:1px solid var(--border);
+  padding:14px 28px;display:flex;align-items:center;justify-content:space-between;
+  position:sticky;top:0;z-index:50;
+}
+#topbar h1{font-size:20px;font-weight:700;color:var(--primary)}
+#topbar p{font-size:13px;color:var(--text-light);margin-top:2px}
+#topbar-actions{display:flex;gap:10px;align-items:center}
+#hamburger{display:none;background:none;border:none;font-size:22px;cursor:pointer;color:var(--primary)}
+.btn-icon{
+  background:none;border:1px solid var(--border);border-radius:8px;
+  padding:8px 12px;cursor:pointer;font-size:16px;color:var(--text-light);transition:all .2s;
+}
+.btn-icon:hover{background:var(--bg);border-color:var(--primary);color:var(--primary)}
+#content{padding:24px 28px;flex:1}
+.btn{
+  display:inline-flex;align-items:center;gap:8px;padding:10px 20px;
+  border-radius:8px;border:none;cursor:pointer;font-size:14px;font-weight:600;
+  transition:all .2s;text-decoration:none;
+}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-primary:hover{background:var(--secondary)}
+.btn-secondary{background:var(--bg);color:var(--text);border:1px solid var(--border)}
+.btn-secondary:hover{background:var(--border)}
+.btn-accent{background:var(--accent);color:var(--primary)}
+.btn-accent:hover{background:#e6a700}
+.btn-danger{background:var(--error);color:#fff}
+.btn-danger:hover{background:#dc2626}
+.btn-success{background:var(--success);color:#fff}
+.btn-success:hover{background:#059669}
+.btn-sm{padding:6px 14px;font-size:13px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.card{background:var(--white);border-radius:12px;border:1px solid var(--border);padding:20px;margin-bottom:16px}
+.card-title{font-size:16px;font-weight:700;color:var(--primary);margin-bottom:12px}
+.form-group{margin-bottom:16px}
+.form-label{display:block;font-size:13px;font-weight:600;color:var(--text);margin-bottom:6px}
+.form-control{
+  width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:8px;
+  font-size:14px;color:var(--text);background:#fff;outline:none;transition:border-color .2s;font-family:inherit;
+}
+.form-control:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(0,51,153,.08)}
+textarea.form-control{resize:vertical;min-height:80px}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.form-row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+.modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;
+  display:flex;align-items:center;justify-content:center;padding:20px;
+}
+.modal{background:#fff;border-radius:16px;padding:32px;width:100%;max-width:520px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.modal h2{font-size:20px;font-weight:700;color:var(--primary);margin-bottom:6px}
+.modal p{color:var(--text-light);font-size:14px;margin-bottom:24px}
+#chat-container{
+  display:flex;flex-direction:column;height:calc(100vh - 200px);
+  background:#fff;border-radius:12px;border:1px solid var(--border);overflow:hidden;
+}
+#chat-messages{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:16px}
+.msg{display:flex;gap:12px;max-width:80%;animation:fadeIn .3s ease}
+.msg.user{flex-direction:row-reverse;align-self:flex-end}
+.msg.ai{align-self:flex-start}
+.msg-avatar{
+  width:36px;height:36px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-weight:700;font-size:13px;flex-shrink:0;
+}
+.msg.ai .msg-avatar{background:var(--primary);color:#fff}
+.msg.user .msg-avatar{background:var(--accent);color:var(--primary)}
+.msg-bubble{padding:12px 16px;border-radius:12px;font-size:14px;line-height:1.6;white-space:pre-wrap;word-break:break-word}
+.msg.ai .msg-bubble{background:var(--bg);color:var(--text);border-radius:4px 12px 12px 12px}
+.msg.user .msg-bubble{background:var(--primary);color:#fff;border-radius:12px 4px 12px 12px}
+.typing-dots{display:flex;gap:4px;align-items:center;padding:8px 4px}
+.typing-dots span{width:8px;height:8px;background:var(--text-light);border-radius:50%;animation:bounce .8s infinite}
+.typing-dots span:nth-child(2){animation-delay:.15s}
+.typing-dots span:nth-child(3){animation-delay:.3s}
+@keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-6px)}}
+#chat-input-area{border-top:1px solid var(--border);padding:16px;display:flex;gap:10px;align-items:flex-end}
+#chat-input{
+  flex:1;padding:10px 14px;border:1px solid var(--border);border-radius:10px;
+  font-size:14px;resize:none;min-height:44px;max-height:120px;outline:none;font-family:inherit;line-height:1.5;
+}
+#chat-input:focus{border-color:var(--primary)}
+.drop-zone{
+  border:2px dashed var(--border);border-radius:12px;padding:40px 20px;
+  text-align:center;cursor:pointer;transition:all .2s;background:#fafafa;
+}
+.drop-zone:hover,.drop-zone.drag-over{border-color:var(--primary);background:rgba(0,51,153,.04)}
+.drop-zone-icon{font-size:40px;margin-bottom:12px}
+.drop-zone p{color:var(--text-light);font-size:14px}
+.drop-zone strong{color:var(--primary)}
+.file-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-top:20px}
+.file-card{
+  background:#fff;border:2px solid var(--border);border-radius:10px;padding:16px;
+  cursor:pointer;transition:all .2s;position:relative;
+}
+.file-card:hover{border-color:var(--secondary);box-shadow:0 4px 12px rgba(0,82,204,.1)}
+.file-card.selected{border-color:var(--primary);background:rgba(0,51,153,.04)}
+.file-card-icon{font-size:32px;margin-bottom:8px}
+.file-card-name{font-size:13px;font-weight:600;color:var(--text);word-break:break-all;margin-bottom:4px}
+.file-card-meta{font-size:11px;color:var(--text-light)}
+.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600}
+.badge-pdf{background:#fee2e2;color:#991b1b}
+.badge-docx{background:#dbeafe;color:#1e40af}
+.badge-xlsx{background:#d1fae5;color:#065f46}
+#ai-result-panel{
+  background:var(--bg);border:1px solid var(--border);border-radius:10px;
+  padding:20px;margin-top:16px;white-space:pre-wrap;font-size:14px;line-height:1.7;
+  max-height:400px;overflow-y:auto;display:none;
+}
+#toast-container{position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;gap:8px}
+.toast{
+  padding:12px 20px;border-radius:10px;font-size:14px;font-weight:500;
+  min-width:260px;max-width:360px;box-shadow:0 4px 20px rgba(0,0,0,.2);
+  animation:slideIn .3s ease;color:#fff;display:flex;align-items:center;gap:10px;
+}
+.toast.info{background:var(--primary)}
+.toast.success{background:var(--success)}
+.toast.error{background:var(--error)}
+.toast.warning{background:var(--warning);color:#000}
+@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+.spinner{width:20px;height:20px;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spinner-dark{border-color:rgba(0,51,153,.2);border-top-color:var(--primary)}
+.data-table{width:100%;border-collapse:collapse;font-size:14px}
+.data-table th{background:var(--primary);color:#fff;padding:12px 16px;text-align:left;font-weight:600;font-size:13px}
+.data-table td{padding:12px 16px;border-bottom:1px solid var(--border)}
+.data-table tr:hover td{background:var(--bg)}
+.data-table tr:last-child td{border-bottom:none}
+.hallazgo-card{border-radius:10px;padding:16px;margin-bottom:12px;border:1px solid var(--border);background:#fff}
+.hallazgo-tipo{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}
+.tipo-nc-mayor{background:#fee2e2;color:#991b1b}
+.tipo-nc-menor{background:#fef3c7;color:#92400e}
+.tipo-observacion{background:#dbeafe;color:#1e40af}
+.tipo-conforme{background:#d1fae5;color:#065f46}
+.hallazgo-details{margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:none}
+.hallazgo-details.open{display:block}
+.empty-state{text-align:center;padding:60px 20px;color:var(--text-light)}
+.empty-state .empty-icon{font-size:60px;margin-bottom:16px;opacity:.4}
+.empty-state p{font-size:15px}
+#mail-reply{
+  width:100%;min-height:160px;padding:14px;border:1px solid var(--border);
+  border-radius:8px;font-size:14px;resize:vertical;font-family:inherit;outline:none;
+}
+#mail-reply:focus{border-color:var(--primary)}
+.mail-result{margin-top:16px;display:none}
+#sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:90}
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%)}
+  #sidebar.open{transform:translateX(0)}
+  #sidebar-overlay.show{display:block}
+  #main{margin-left:0}
+  #hamburger{display:block}
+  #content{padding:16px}
+  .form-row,.form-row-3{grid-template-columns:1fr}
+  .msg{max-width:95%}
+}
+.module-header{margin-bottom:24px}
+.module-header h2{font-size:22px;font-weight:700;color:var(--primary)}
+.module-header p{color:var(--text-light);font-size:14px;margin-top:4px}
+.progress-bar{height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:8px}
+.progress-fill{height:100%;background:var(--accent);border-radius:2px;transition:width .3s}
+.ai-suggestion{background:linear-gradient(135deg,rgba(0,51,153,.06),rgba(0,82,204,.04));border:1px solid rgba(0,51,153,.2);border-radius:10px;padding:16px;margin-top:12px}
+.ai-suggestion-title{font-size:12px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.ai-suggestion p{font-size:14px;line-height:1.6;white-space:pre-wrap}
+#generator-result{margin-top:20px;padding:20px;background:var(--bg);border:1px solid var(--border);border-radius:10px;display:none}
+</style>
+</head>
+<body>
+
+<div id="sidebar-overlay" onclick="closeSidebar()"></div>
+
+<nav id="sidebar">
+  <div id="sidebar-logo">
+    <div class="logo-badge">IQ IA</div>
+    <p>Ingeniero de Calidad IA</p>
+  </div>
+  <div id="sidebar-nav">
+    <div class="nav-item active" onclick="switchModule('consultas')" data-module="consultas">
+      <span class="nav-icon">💬</span><span>Consultas</span>
+    </div>
+    <div class="nav-item" onclick="switchModule('documentos')" data-module="documentos">
+      <span class="nav-icon">📁</span><span>Documentos</span>
+    </div>
+    <div class="nav-item" onclick="switchModule('generador')" data-module="generador">
+      <span class="nav-icon">✨</span><span>Generador</span>
+    </div>
+    <div class="nav-item" onclick="switchModule('mails')" data-module="mails">
+      <span class="nav-icon">📧</span><span>Gestor de Mails</span>
+    </div>
+    <div class="nav-item" onclick="switchModule('obsoletos')" data-module="obsoletos">
+      <span class="nav-icon">🗄️</span><span>Obsoletos</span>
+    </div>
+    <div class="nav-item" onclick="switchModule('auditoria')" data-module="auditoria">
+      <span class="nav-icon">🔍</span><span>Auditoría Interna</span>
+    </div>
+  </div>
+  <div id="sidebar-footer">
+    <span>Documentos activos</span>
+    <span id="doc-count">—</span>
+  </div>
+</nav>
+
+<div id="main">
+  <div id="topbar">
+    <div>
+      <button id="hamburger" onclick="toggleSidebar()">☰</button>
+      <h1 id="topbar-title">Consultas IA</h1>
+      <p id="topbar-desc">Asistente experto en FSSC 22000</p>
+    </div>
+    <div id="topbar-actions">
+      <button class="btn-icon" onclick="openConfig()" title="Configuración">⚙️</button>
+    </div>
+  </div>
+  <div id="content"></div>
+</div>
+
+<div id="toast-container"></div>
+
+<div id="config-modal" class="modal-overlay" style="display:none">
+  <div class="modal">
+    <h2>⚙️ Configuración</h2>
+    <p>Ingrese sus credenciales para comenzar. Se guardan localmente en su navegador.</p>
+    <div class="form-group">
+      <label class="form-label">API Key de Anthropic</label>
+      <input type="password" id="cfg-anthropic" class="form-control" placeholder="sk-ant-...">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Supabase URL</label>
+      <input type="text" id="cfg-supabase-url" class="form-control" placeholder="https://xxxx.supabase.co">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Supabase Anon Key</label>
+      <input type="password" id="cfg-supabase-key" class="form-control" placeholder="eyJ...">
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px">
+      <button class="btn btn-secondary" onclick="closeConfig()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveConfig()">💾 Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== GLOBALS =====
+let supabaseClient = null;
+let currentModule = '';
+let selectedDocId = null;
+let hallazgos = [];
+let chatHistory = [];
+let uploadedDocs = [];
+
+// ===== INIT =====
+document.addEventListener('DOMContentLoaded', () => {
+  checkConfig();
+  initSupabase();
+  switchModule('consultas');
+  loadDocumentCount();
+});
+
+// ===== CONFIG =====
+function checkConfig() {
+  const key = localStorage.getItem('iq_anthropic_key');
+  const url = localStorage.getItem('iq_supabase_url');
+  const sk = localStorage.getItem('iq_supabase_key');
+  if (!key || !url || !sk) openConfig();
+}
+
+function openConfig() {
+  document.getElementById('cfg-anthropic').value = localStorage.getItem('iq_anthropic_key') || '';
+  document.getElementById('cfg-supabase-url').value = localStorage.getItem('iq_supabase_url') || '';
+  document.getElementById('cfg-supabase-key').value = localStorage.getItem('iq_supabase_key') || '';
+  document.getElementById('config-modal').style.display = 'flex';
+}
+
+function closeConfig() {
+  document.getElementById('config-modal').style.display = 'none';
+}
+
+function saveConfig() {
+  const key = document.getElementById('cfg-anthropic').value.trim();
+  const url = document.getElementById('cfg-supabase-url').value.trim();
+  const sk = document.getElementById('cfg-supabase-key').value.trim();
+  if (!key || !url || !sk) { showToast('Complete todos los campos', 'error'); return; }
+  localStorage.setItem('iq_anthropic_key', key);
+  localStorage.setItem('iq_supabase_url', url);
+  localStorage.setItem('iq_supabase_key', sk);
+  closeConfig();
+  initSupabase();
+  loadDocumentCount();
+  showToast('Configuración guardada correctamente', 'success');
+}
+
+// ===== SUPABASE =====
+function initSupabase() {
+  const url = localStorage.getItem('iq_supabase_url');
+  const key = localStorage.getItem('iq_supabase_key');
+  if (url && key && window.supabase) {
+    try { supabaseClient = window.supabase.createClient(url, key); } catch(e) { console.error('Supabase init:', e); }
+  }
+}
+
+// ===== AI =====
+async function callAI(messages, systemPrompt) {
+  const key = localStorage.getItem('iq_anthropic_key');
+  if (!key) { showToast('Configure su API key de Anthropic', 'error'); return null; }
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 4096, system: systemPrompt, messages })
+  });
+  if (!res.ok) throw new Error(await res.text());
+  const data = await res.json();
+  return data.content[0].text;
+}
+
+// ===== TOAST =====
+function showToast(message, type = 'info') {
+  const container = document.getElementById('toast-container');
+  const icons = { info: 'ℹ️', success: '✅', error: '❌', warning: '⚠️' };
+  const toast = document.createElement('div');
+  toast.className = 'toast ' + type;
+  toast.innerHTML = '<span>' + (icons[type] || 'ℹ️') + '</span><span>' + escapeHtml(message) + '</span>';
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.style.transition = 'opacity .3s,transform .3s';
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateX(100%)';
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
+
+// ===== SIDEBAR =====
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebar-overlay').classList.toggle('show');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').classList.remove('show');
+}
+
+// ===== MODULE SWITCH =====
+const moduleInfo = {
+  consultas:  { title: 'Consultas IA', desc: 'Asistente experto en FSSC 22000' },
+  documentos: { title: 'Gestión de Documentos', desc: 'Administre y procese documentos con IA' },
+  generador:  { title: 'Generador de Documentos', desc: 'Cree documentos profesionales con IA' },
+  mails:      { title: 'Gestor de Mails', desc: 'Procese correos electrónicos con IA' },
+  obsoletos:  { title: 'Documentos Obsoletos', desc: 'Gestione documentos archivados' },
+  auditoria:  { title: 'Auditoría Interna', desc: 'Gestión de hallazgos FSSC 22000' }
+};
+
+function switchModule(mod) {
+  currentModule = mod;
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.module === mod));
+  const info = moduleInfo[mod];
+  document.getElementById('topbar-title').textContent = info.title;
+  document.getElementById('topbar-desc').textContent = info.desc;
+  document.getElementById('content').innerHTML = '';
+  const renders = { consultas: renderConsultas, documentos: renderDocumentos, generador: renderGenerador, mails: renderMails, obsoletos: renderObsoletos, auditoria: renderAuditoria };
+  renders[mod]();
+  closeSidebar();
+}
+
+async function loadDocumentCount() {
+  if (!supabaseClient) { document.getElementById('doc-count').textContent = '—'; return; }
+  try {
+    const { count } = await supabaseClient.from('documentos').select('*', { count: 'exact', head: true });
+    document.getElementById('doc-count').textContent = count ?? '0';
+  } catch(e) { document.getElementById('doc-count').textContent = '—'; }
+}
+
+// ======================================================================
+// MODULE 1: CONSULTAS
+// ======================================================================
+function renderConsultas() {
+  document.getElementById('content').innerHTML = `
+    <div id="chat-container">
+      <div id="chat-messages">
+        <div class="msg ai">
+          <div class="msg-avatar">IA</div>
+          <div class="msg-bubble">¡Hola! Soy su asistente de Calidad experto en FSSC 22000, BRC, IFS y normas de inocuidad alimentaria. ¿En qué puedo ayudarle hoy?</div>
+        </div>
+      </div>
+      <div id="chat-input-area">
+        <textarea id="chat-input" placeholder="Escriba su consulta... (Ctrl+Enter para enviar)" rows="1"></textarea>
+        <button class="btn btn-primary" onclick="sendChat()" id="send-btn">➤ Enviar</button>
+      </div>
+    </div>`;
+  const inp = document.getElementById('chat-input');
+  inp.addEventListener('keydown', e => { if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); sendChat(); } autoResize(inp); });
+  inp.addEventListener('input', () => autoResize(inp));
+}
+
+function autoResize(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 120) + 'px'; }
+
+async function sendChat() {
+  const inp = document.getElementById('chat-input');
+  const text = inp.value.trim();
+  if (!text) return;
+  inp.value = '';
+  autoResize(inp);
+  appendMsg('user', text);
+  chatHistory.push({ role: 'user', content: text });
+  const btn = document.getElementById('send-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>';
+  const tid = appendTyping();
+  try {
+    let docCtx = '';
+    if (supabaseClient) {
+      try {
+        const { data } = await supabaseClient.from('documentos').select('nombre,tipo').limit(20);
+        if (data && data.length) docCtx = '\n\nDocumentos en el sistema:\n' + data.map(d => '- ' + d.nombre + ' (' + d.tipo + ')').join('\n');
+      } catch(e) {}
+    }
+    const sys = 'Eres un Ingeniero de Calidad experto en FSSC 22000, BRC Food, IFS Food, ISO 22000, HACCP, BPM y normas de inocuidad alimentaria. Respondes en español de manera profesional, clara y detallada. Brindas recomendaciones prácticas y citas de cláusulas normativas cuando corresponde.' + docCtx;
+    const resp = await callAI([...chatHistory], sys);
+    removeTyping(tid);
+    if (resp) { appendMsg('ai', resp); chatHistory.push({ role: 'assistant', content: resp }); }
+  } catch(e) {
+    removeTyping(tid);
+    showToast('Error al consultar la IA: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '➤ Enviar';
+  }
+}
+
+function appendMsg(role, text) {
+  const msgs = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  div.innerHTML = '<div class="msg-avatar">' + (role === 'ai' ? 'IA' : 'Ud') + '</div><div class="msg-bubble">' + escapeHtml(text) + '</div>';
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function appendTyping() {
+  const msgs = document.getElementById('chat-messages');
+  const id = 'typ' + Date.now();
+  const div = document.createElement('div');
+  div.className = 'msg ai';
+  div.id = id;
+  div.innerHTML = '<div class="msg-avatar">IA</div><div class="msg-bubble"><div class="typing-dots"><span></span><span></span><span></span></div></div>';
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+  return id;
+}
+
+function removeTyping(id) { const el = document.getElementById(id); if (el) el.remove(); }
+
+// ======================================================================
+// MODULE 2: DOCUMENTOS
+// ======================================================================
+function renderDocumentos() {
+  document.getElementById('content').innerHTML = `
+    <div class="module-header"><h2>📁 Gestión de Documentos</h2><p>Suba, gestione y procese sus documentos técnicos con IA</p></div>
+    <div class="card">
+      <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+        <div class="drop-zone-icon">📂</div>
+        <p><strong>Haga clic o arrastre archivos aquí</strong></p>
+        <p>Formatos aceptados: PDF, DOCX, XLSX — máx. 50 MB por archivo</p>
+      </div>
+      <input type="file" id="file-input" style="display:none" accept=".pdf,.docx,.xlsx" multiple onchange="handleFileSelect(event)">
+    </div>
+    <div id="upload-progress" style="display:none" class="card">
+      <p id="upload-status" style="font-size:14px;margin-bottom:8px">Subiendo...</p>
+      <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+    </div>
+    <div id="file-cards-area">
+      <div style="text-align:center;padding:30px;color:var(--text-light)"><span class="spinner spinner-dark"></span><p style="margin-top:12px">Cargando documentos...</p></div>
+    </div>
+    <div id="selected-doc-panel" style="display:none" class="card">
+      <div class="card-title" id="selected-doc-title"></div>
+      <div class="form-group">
+        <label class="form-label">Instrucción para la IA</label>
+        <textarea class="form-control" id="ai-instruction" style="min-height:80px" placeholder="Ej: Resume este documento, extrae los puntos clave, identifica los requisitos normativos..."></textarea>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="processDocWithAI()"><span id="proc-btn-text">🤖 Procesar con IA</span></button>
+        <button class="btn btn-danger btn-sm" onclick="markObsolete()">🗄️ Pasar a Obsoleto</button>
+      </div>
+    </div>
+    <div id="ai-result-panel"></div>`;
+  setupDropZone();
+  loadDocuments();
+}
+
+function setupDropZone() {
+  const zone = document.getElementById('drop-zone');
+  if (!zone) return;
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    const files = Array.from(e.dataTransfer.files).filter(f => /\.(pdf|docx|xlsx)$/i.test(f.name));
+    if (files.length) uploadFiles(files);
+    else showToast('Solo se aceptan archivos PDF, DOCX o XLSX', 'warning');
+  });
+}
+
+function handleFileSelect(e) { if (e.target.files.length) uploadFiles(Array.from(e.target.files)); }
+
+async function uploadFiles(files) {
+  if (!supabaseClient) { showToast('Configure Supabase primero', 'error'); return; }
+  document.getElementById('upload-progress').style.display = 'block';
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    document.getElementById('upload-status').textContent = 'Subiendo ' + file.name + '...';
+    document.getElementById('progress-fill').style.width = Math.round(((i + 0.5) / files.length) * 100) + '%';
+    try {
+      const ext = file.name.split('.').pop().toLowerCase();
+      const path = 'docs/' + Date.now() + '_' + file.name;
+      const { error: se } = await supabaseClient.storage.from('documentos').upload(path, file);
+      if (se) throw se;
+      const { data: ud } = supabaseClient.storage.from('documentos').getPublicUrl(path);
+      const { error: de } = await supabaseClient.from('documentos').insert({
+        nombre: file.name, tipo: ext.toUpperCase(),
+        storage_url: ud.publicUrl, storage_path: path,
+        tamano: file.size, creado_en: new Date().toISOString()
+      });
+      if (de) throw de;
+      showToast(file.name + ' subido correctamente', 'success');
+    } catch(e) { showToast('Error subiendo ' + file.name + ': ' + e.message, 'error'); }
+  }
+  document.getElementById('progress-fill').style.width = '100%';
+  document.getElementById('upload-status').textContent = 'Carga completa';
+  setTimeout(() => { const el = document.getElementById('upload-progress'); if (el) el.style.display = 'none'; }, 2000);
+  loadDocuments();
+  loadDocumentCount();
+}
+
+async function loadDocuments() {
+  if (!supabaseClient) {
+    const a = document.getElementById('file-cards-area');
+    if (a) a.innerHTML = '<div class="empty-state"><div class="empty-icon">🔑</div><p>Configure Supabase para ver documentos</p></div>';
+    return;
+  }
+  try {
+    const { data, error } = await supabaseClient.from('documentos').select('*').order('creado_en', { ascending: false });
+    if (error) throw error;
+    uploadedDocs = data || [];
+    renderFileCards();
+  } catch(e) {
+    const a = document.getElementById('file-cards-area');
+    if (a) a.innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><p>Error cargando documentos: ' + escapeHtml(e.message) + '</p></div>';
+  }
+}
+
+function renderFileCards() {
+  const area = document.getElementById('file-cards-area');
+  if (!area) return;
+  if (!uploadedDocs.length) { area.innerHTML = '<div class="empty-state"><div class="empty-icon">📂</div><p>No hay documentos. Suba su primer archivo.</p></div>'; return; }
+  const icons = { PDF: '📄', DOCX: '📝', XLSX: '📊' };
+  const bc = { PDF: 'badge-pdf', DOCX: 'badge-docx', XLSX: 'badge-xlsx' };
+  area.innerHTML = '<h3 style="margin-bottom:14px;color:var(--primary);font-size:15px">📋 Documentos (' + uploadedDocs.length + ')</h3><div class="file-cards">' +
+    uploadedDocs.map(doc => '<div class="file-card ' + (selectedDocId === doc.id ? 'selected' : '') + '" onclick="selectDoc(\'' + doc.id + '\')">' +
+      '<div class="file-card-icon">' + (icons[doc.tipo] || '📄') + '</div>' +
+      '<div class="file-card-name">' + escapeHtml(doc.nombre) + '</div>' +
+      '<div class="file-card-meta"><span class="badge ' + (bc[doc.tipo] || '') + '">' + escapeHtml(doc.tipo || '') + '</span>' +
+      (doc.tamano ? ' · ' + Math.round(doc.tamano / 1024) + ' KB' : '') + '</div>' +
+      '<div class="file-card-meta" style="margin-top:4px">' + formatDate(doc.creado_en) + '</div></div>').join('') + '</div>';
+}
+
+function selectDoc(id) {
+  selectedDocId = id === selectedDocId ? null : id;
+  renderFileCards();
+  const panel = document.getElementById('selected-doc-panel');
+  if (!panel) return;
+  if (selectedDocId) {
+    const doc = uploadedDocs.find(d => d.id === id);
+    document.getElementById('selected-doc-title').textContent = '📄 ' + doc.nombre;
+    panel.style.display = 'block';
+  } else {
+    panel.style.display = 'none';
+    const r = document.getElementById('ai-result-panel');
+    if (r) r.style.display = 'none';
+  }
+}
+
+async function processDocWithAI() {
+  if (!selectedDocId) return;
+  const doc = uploadedDocs.find(d => d.id === selectedDocId);
+  const instr = (document.getElementById('ai-instruction').value.trim()) || 'Resume este documento y extrae los puntos más importantes relacionados con calidad e inocuidad alimentaria.';
+  const btn = document.getElementById('proc-btn-text');
+  btn.innerHTML = '<span class="spinner"></span> Procesando...';
+  try {
+    const sys = 'Eres un experto en gestión de calidad e inocuidad alimentaria (FSSC 22000, BRC, IFS, ISO 22000). Analiza documentos técnicos y brinda respuestas detalladas y estructuradas en español.';
+    const msgs = [{ role: 'user', content: 'Documento: "' + doc.nombre + '" (tipo: ' + doc.tipo + ')\n\nInstrucción: ' + instr + '\n\nBrinda un análisis profesional basado en el nombre, tipo e instrucción indicada.' }];
+    const result = await callAI(msgs, sys);
+    if (result) {
+      const panel = document.getElementById('ai-result-panel');
+      panel.style.display = 'block';
+      panel.innerHTML = '<div style="font-weight:700;color:var(--primary);margin-bottom:10px">🤖 Resultado del análisis IA:</div>' + escapeHtml(result);
+      panel.scrollIntoView({ behavior: 'smooth' });
+    }
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+  finally { btn.innerHTML = '🤖 Procesar con IA'; }
+}
+
+async function markObsolete() {
+  if (!selectedDocId || !supabaseClient) return;
+  const doc = uploadedDocs.find(d => d.id === selectedDocId);
+  if (!confirm('¿Pasar "' + doc.nombre + '" a obsoletos?')) return;
+  try {
+    const { error: ie } = await supabaseClient.from('documentos_obsoletos').insert({ nombre: doc.nombre, tipo: doc.tipo, storage_url: doc.storage_url, storage_path: doc.storage_path, obsoleto_en: new Date().toISOString() });
+    if (ie) throw ie;
+    const { error: de } = await supabaseClient.from('documentos').delete().eq('id', doc.id);
+    if (de) throw de;
+    showToast('Documento pasado a obsoletos', 'success');
+    selectedDocId = null;
+    const sp = document.getElementById('selected-doc-panel');
+    if (sp) sp.style.display = 'none';
+    const rp = document.getElementById('ai-result-panel');
+    if (rp) rp.style.display = 'none';
+    loadDocuments();
+    loadDocumentCount();
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+// ======================================================================
+// MODULE 3: GENERADOR
+// ======================================================================
+function renderGenerador() {
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('content').innerHTML = `
+    <div class="module-header"><h2>✨ Generador de Documentos</h2><p>Cree documentos profesionales de calidad con IA</p></div>
+    <div class="card">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Tipo de Archivo</label>
+          <select class="form-control" id="gen-tipo">
+            <option value="Word">Word (.docx)</option>
+            <option value="Excel">Excel (.xlsx)</option>
+            <option value="PDF">PDF (.pdf)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Subtipo / Plantilla</label>
+          <select class="form-control" id="gen-subtipo">
+            <option>Especificación Técnica</option>
+            <option>Certificado de Calidad</option>
+            <option>Informe de Análisis</option>
+            <option>Procedimiento</option>
+            <option>Acta</option>
+            <option>Registro de Control</option>
+            <option>Planilla de Auditoría</option>
+            <option>Matriz de Riesgos</option>
+            <option>Reporte de Hallazgos</option>
+            <option>Certificado Formal</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row-3">
+        <div class="form-group">
+          <label class="form-label">Cliente</label>
+          <input type="text" class="form-control" id="gen-cliente" placeholder="Nombre del cliente">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Producto</label>
+          <input type="text" class="form-control" id="gen-producto" placeholder="Nombre del producto">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Código de Documento</label>
+          <input type="text" class="form-control" id="gen-codigo" placeholder="Ej: DOC-001">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Versión</label>
+          <input type="text" class="form-control" id="gen-version" placeholder="v1.0">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Fecha</label>
+          <input type="date" class="form-control" id="gen-fecha" value="${today}">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Descripción / Contenido Requerido</label>
+        <textarea class="form-control" id="gen-descripcion" style="min-height:120px" placeholder="Describa el contenido, requisitos específicos, parámetros, cláusulas a incluir..."></textarea>
+      </div>
+      <button class="btn btn-primary" id="gen-btn" onclick="generarDocumento()" style="width:100%;justify-content:center;padding:14px">
+        ✨ Generar Documento
+      </button>
+    </div>
+    <div id="generator-result">
+      <div id="gen-result-content"></div>
+    </div>`;
+}
+
+async function generarDocumento() {
+  const tipo = document.getElementById('gen-tipo').value;
+  const subtipo = document.getElementById('gen-subtipo').value;
+  const cliente = document.getElementById('gen-cliente').value.trim();
+  const producto = document.getElementById('gen-producto').value.trim();
+  const codigo = document.getElementById('gen-codigo').value.trim();
+  const version = document.getElementById('gen-version').value.trim();
+  const fecha = document.getElementById('gen-fecha').value;
+  const descripcion = document.getElementById('gen-descripcion').value.trim();
+  if (!descripcion) { showToast('Ingrese una descripción del documento', 'warning'); return; }
+  const btn = document.getElementById('gen-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Generando con IA...';
+  const metadata = { tipo, subtipo, cliente, producto, codigo, version, fecha, descripcion };
+  try {
+    const sys = 'Eres un experto en documentación técnica de calidad e inocuidad alimentaria (FSSC 22000, ISO 22000, HACCP, BRC, IFS). Genera documentos completos, profesionales y bien estructurados en español. Usa el formato apropiado para cada tipo de documento.';
+    const msg = 'Genera un documento de tipo "' + subtipo + '" con los siguientes datos:\n- Tipo de archivo: ' + tipo + '\n- Cliente: ' + (cliente || 'N/A') + '\n- Producto: ' + (producto || 'N/A') + '\n- Código: ' + (codigo || 'DOC-001') + '\n- Versión: ' + (version || 'v1.0') + '\n- Fecha: ' + fecha + '\n- Descripción/Requisitos: ' + descripcion + '\n\nGenera el contenido completo. Para tablas usa: TABLA|Col1|Col2\nFILA|val1|val2. Incluye todos los apartados necesarios para un documento técnico profesional de calidad alimentaria.';
+    const aiContent = await callAI([{ role: 'user', content: msg }], sys);
+    if (!aiContent) throw new Error('Sin respuesta de la IA');
+    const panel = document.getElementById('generator-result');
+    panel.style.display = 'block';
+    document.getElementById('gen-result-content').innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">' +
+      '<h3 style="color:var(--primary)">✅ Documento generado: ' + escapeHtml(subtipo) + '</h3>' +
+      '<button class="btn btn-accent" onclick="downloadDocument()">⬇️ Descargar ' + escapeHtml(tipo) + '</button></div>' +
+      '<div style="background:var(--bg);border-radius:8px;padding:16px;font-size:13px;line-height:1.7;max-height:400px;overflow-y:auto;white-space:pre-wrap">' + escapeHtml(aiContent) + '</div>';
+    panel.scrollIntoView({ behavior: 'smooth' });
+    window._lastAIContent = aiContent;
+    window._lastMeta = metadata;
+  } catch(e) { showToast('Error generando: ' + e.message, 'error'); }
+  finally { btn.disabled = false; btn.innerHTML = '✨ Generar Documento'; }
+}
+
+function downloadDocument() {
+  const meta = window._lastMeta;
+  const content = window._lastAIContent;
+  if (!meta || !content) return;
+  if (meta.tipo === 'Word') generateDocx(meta, content);
+  else if (meta.tipo === 'Excel') generateXlsx(meta, content);
+  else generatePdf(meta, content);
+}
+
+async function generateDocx(metadata, aiContent) {
+  try {
+    const { Document, Paragraph, TextRun, HeadingLevel, AlignmentType, Table, TableRow, TableCell, WidthType, Packer } = window.docx;
+    const children = [
+      new Paragraph({ children: [new TextRun({ text: metadata.subtipo, bold: true, size: 32, color: '003399' })], heading: HeadingLevel.TITLE, alignment: AlignmentType.CENTER }),
+      new Paragraph({ children: [new TextRun({ text: (metadata.codigo || 'DOC-001') + ' | Versión ' + (metadata.version || '1.0') + ' | ' + metadata.fecha, size: 20, color: '666666' })], alignment: AlignmentType.CENTER })
+    ];
+    if (metadata.cliente) children.push(new Paragraph({ children: [new TextRun({ text: 'Cliente: ' + metadata.cliente + (metadata.producto ? '  |  Producto: ' + metadata.producto : ''), size: 20, color: '444444' })], alignment: AlignmentType.CENTER }));
+    children.push(new Paragraph({ children: [new TextRun({ text: '' })] }));
+    const lines = aiContent.split('\n');
+    let tableRows = [];
+    let inTable = false;
+    for (const line of lines) {
+      if (line.startsWith('TABLA|')) {
+        inTable = true;
+        tableRows = [line.split('|').slice(1)];
+      } else if (line.startsWith('FILA|') && inTable) {
+        tableRows.push(line.split('|').slice(1));
+      } else {
+        if (inTable && tableRows.length > 0) {
+          try {
+            children.push(new Table({ rows: tableRows.map((cells, ri) => new TableRow({ children: cells.map(cell => new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: cell.trim(), bold: ri === 0, color: ri === 0 ? 'FFFFFF' : '000000' })] })], shading: ri === 0 ? { fill: '003399' } : undefined })) })), width: { size: 100, type: WidthType.PERCENTAGE } }));
+          } catch(e) {}
+          tableRows = [];
+          inTable = false;
+        }
+        if (line.startsWith('# ')) {
+          children.push(new Paragraph({ children: [new TextRun({ text: line.slice(2), bold: true, size: 28, color: '003399' })], heading: HeadingLevel.HEADING_1 }));
+        } else if (line.startsWith('## ')) {
+          children.push(new Paragraph({ children: [new TextRun({ text: line.slice(3), bold: true, size: 24, color: '0052CC' })], heading: HeadingLevel.HEADING_2 }));
+        } else if (line.startsWith('### ')) {
+          children.push(new Paragraph({ children: [new TextRun({ text: line.slice(4), bold: true, size: 22, color: '003399' })], heading: HeadingLevel.HEADING_3 }));
+        } else if (line.startsWith('- ') || line.startsWith('• ')) {
+          children.push(new Paragraph({ children: [new TextRun({ text: line.replace(/^[-•]\s/, ''), size: 20 })], bullet: { level: 0 } }));
+        } else if (line.trim() === '') {
+          children.push(new Paragraph({ children: [new TextRun({ text: '' })] }));
+        } else {
+          const runs = [];
+          let last = 0;
+          const re = /\*\*(.+?)\*\*/g;
+          let m;
+          while ((m = re.exec(line)) !== null) {
+            if (m.index > last) runs.push(new TextRun({ text: line.slice(last, m.index), size: 20 }));
+            runs.push(new TextRun({ text: m[1], bold: true, size: 20 }));
+            last = m.index + m[0].length;
+          }
+          if (last < line.length) runs.push(new TextRun({ text: line.slice(last), size: 20 }));
+          children.push(new Paragraph({ children: runs.length ? runs : [new TextRun({ text: line, size: 20 })] }));
+        }
+      }
+    }
+    const doc = new Document({ sections: [{ children }] });
+    const blob = await Packer.toBlob(doc);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (metadata.subtipo.replace(/\s+/g, '_')) + '_' + (metadata.codigo || 'DOC') + '_' + metadata.fecha + '.docx';
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Documento Word descargado', 'success');
+  } catch(e) { showToast('Error generando Word: ' + e.message, 'error'); }
+}
+
+function generateXlsx(metadata, aiContent) {
+  try {
+    const wb = XLSX.utils.book_new();
+    const rows = [[metadata.subtipo], ['Código: ' + (metadata.codigo || 'DOC-001'), 'Versión: ' + (metadata.version || '1.0'), 'Fecha: ' + metadata.fecha]];
+    if (metadata.cliente) rows.push(['Cliente: ' + metadata.cliente, 'Producto: ' + (metadata.producto || '')]);
+    rows.push([]);
+    aiContent.split('\n').forEach(line => {
+      if (line.startsWith('TABLA|')) rows.push(line.split('|').slice(1));
+      else if (line.startsWith('FILA|')) rows.push(line.split('|').slice(1));
+      else if (line.trim()) rows.push([line.replace(/^#+\s/, '').replace(/\*\*/g, '')]);
+      else rows.push([]);
+    });
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{ wch: 50 }, { wch: 30 }, { wch: 30 }, { wch: 30 }];
+    XLSX.utils.book_append_sheet(wb, ws, 'Datos');
+    XLSX.writeFile(wb, (metadata.subtipo.replace(/\s+/g, '_')) + '_' + (metadata.codigo || 'DOC') + '_' + metadata.fecha + '.xlsx');
+    showToast('Documento Excel descargado', 'success');
+  } catch(e) { showToast('Error generando Excel: ' + e.message, 'error'); }
+}
+
+function generatePdf(metadata, aiContent) {
+  try {
+    const doc = new window.jspdf.jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pw = doc.internal.pageSize.getWidth();
+    doc.setFillColor(0, 51, 153);
+    doc.rect(0, 0, pw, 30, 'F');
+    doc.setTextColor(255, 184, 0);
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.text(metadata.subtipo, pw / 2, 12, { align: 'center' });
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.text((metadata.codigo || 'DOC-001') + ' | v' + (metadata.version || '1.0') + ' | ' + metadata.fecha, pw / 2, 20, { align: 'center' });
+    if (metadata.cliente) doc.text('Cliente: ' + metadata.cliente + (metadata.producto ? '  |  Producto: ' + metadata.producto : ''), pw / 2, 27, { align: 'center' });
+    const metaRows = [];
+    if (metadata.cliente) metaRows.push(['Cliente', metadata.cliente]);
+    if (metadata.producto) metaRows.push(['Producto', metadata.producto]);
+    if (metadata.codigo) metaRows.push(['Código', metadata.codigo]);
+    metaRows.push(['Versión', metadata.version || '1.0']);
+    metaRows.push(['Fecha', metadata.fecha]);
+    if (metaRows.length) {
+      doc.autoTable({ startY: 36, head: [['Campo', 'Valor']], body: metaRows, theme: 'grid', headStyles: { fillColor: [0, 51, 153], textColor: 255, fontStyle: 'bold' }, styles: { fontSize: 10 }, columnStyles: { 0: { fontStyle: 'bold', cellWidth: 50 } } });
+    }
+    let y = doc.lastAutoTable ? doc.lastAutoTable.finalY + 10 : 50;
+    const margin = 14;
+    const maxW = pw - margin * 2;
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    aiContent.split('\n').forEach(line => {
+      if (y > 270) { doc.addPage(); y = 20; }
+      if (line.startsWith('# ') || line.startsWith('## ') || line.startsWith('### ')) {
+        y += 4;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(line.startsWith('# ') ? 13 : line.startsWith('## ') ? 11 : 10);
+        doc.setTextColor(0, 51, 153);
+        const wrapped = doc.splitTextToSize(line.replace(/^#+\s/, ''), maxW);
+        doc.text(wrapped, margin, y);
+        y += wrapped.length * 5 + 2;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        doc.setTextColor(0, 0, 0);
+      } else if (line.trim() === '') {
+        y += 3;
+      } else {
+        const wrapped = doc.splitTextToSize(line.replace(/\*\*/g, ''), maxW);
+        doc.text(wrapped, margin, y);
+        y += wrapped.length * 5;
+      }
+    });
+    doc.save((metadata.subtipo.replace(/\s+/g, '_')) + '_' + (metadata.codigo || 'DOC') + '_' + metadata.fecha + '.pdf');
+    showToast('Documento PDF descargado', 'success');
+  } catch(e) { showToast('Error generando PDF: ' + e.message, 'error'); }
+}
+
+// ======================================================================
+// MODULE 4: GESTOR DE MAILS
+// ======================================================================
+function renderMails() {
+  document.getElementById('content').innerHTML = `
+    <div class="module-header"><h2>📧 Gestor de Mails</h2><p>Procese correos electrónicos y genere documentos automáticamente con IA</p></div>
+    <div class="card">
+      <div class="form-group">
+        <label class="form-label">Texto del correo recibido</label>
+        <textarea class="form-control" id="mail-text" style="min-height:200px" placeholder="Pegue aquí el correo electrónico completo que desea procesar..."></textarea>
+      </div>
+      <button class="btn btn-primary" id="mail-btn" onclick="procesarMail()" style="width:100%;justify-content:center;padding:14px;font-size:16px">
+        📧 Procesar Mail con IA
+      </button>
+    </div>
+    <div class="mail-result" id="mail-result">
+      <div class="card">
+        <div class="card-title">✉️ Información extraída</div>
+        <div id="mail-info-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px"></div>
+      </div>
+      <div class="card">
+        <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <span>📝 Respuesta sugerida</span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-secondary btn-sm" onclick="copyReply()">📋 Copiar</button>
+            <a id="gmail-link" href="#" target="_blank" class="btn btn-accent btn-sm">📤 Abrir en Gmail</a>
+          </div>
+        </div>
+        <textarea id="mail-reply" placeholder="La respuesta generada aparecerá aquí..."></textarea>
+      </div>
+      <div class="card" id="mail-docs-card" style="display:none">
+        <div class="card-title">📄 Documentos a generar</div>
+        <div id="mail-docs-list"></div>
+      </div>
+    </div>`;
+}
+
+async function procesarMail() {
+  const text = document.getElementById('mail-text').value.trim();
+  if (!text) { showToast('Ingrese el texto del correo', 'warning'); return; }
+  const btn = document.getElementById('mail-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Analizando con IA...';
+  try {
+    const sys = 'Eres un asistente experto en gestión de calidad e inocuidad alimentaria (FSSC 22000). Analizas correos relacionados con certificaciones, auditorías, documentación técnica y requisitos de clientes. Responde ÚNICAMENTE con JSON válido, sin texto adicional.';
+    const msg = 'Analiza este correo y devuelve exactamente este JSON:\n{"remitente":"nombre y email","asunto":"asunto del correo","respuesta_email":"respuesta profesional completa en español","documentos_a_generar":[{"tipo":"Word|Excel|PDF","subtipo":"Especificación Técnica|Certificado de Calidad|Informe de Análisis|Procedimiento|Acta|Registro de Control|Planilla de Auditoría|Matriz de Riesgos|Reporte de Hallazgos|Certificado Formal","cliente":"nombre","producto":"producto","descripcion":"descripcion detallada"}]}\n\nCorreo:\n' + text;
+    const response = await callAI([{ role: 'user', content: msg }], sys);
+    if (!response) throw new Error('Sin respuesta de la IA');
+    let parsed;
+    try {
+      const jm = response.match(/```(?:json)?\s*([\s\S]*?)```/) || response.match(/(\{[\s\S]*\})/);
+      parsed = JSON.parse((jm ? jm[1] : response).trim());
+    } catch(e) { throw new Error('Error parseando respuesta JSON'); }
+    document.getElementById('mail-result').style.display = 'block';
+    document.getElementById('mail-info-grid').innerHTML =
+      '<div><span class="form-label">Remitente</span><p style="font-size:14px">' + escapeHtml(parsed.remitente || '—') + '</p></div>' +
+      '<div><span class="form-label">Asunto</span><p style="font-size:14px">' + escapeHtml(parsed.asunto || '—') + '</p></div>';
+    const reply = parsed.respuesta_email || '';
+    document.getElementById('mail-reply').value = reply;
+    const su = encodeURIComponent(parsed.asunto ? 'RE: ' + parsed.asunto : 'Respuesta');
+    const bo = encodeURIComponent(reply);
+    document.getElementById('gmail-link').href = 'https://mail.google.com/mail/?view=cm&su=' + su + '&body=' + bo;
+    const docs = parsed.documentos_a_generar || [];
+    if (docs.length) {
+      document.getElementById('mail-docs-card').style.display = 'block';
+      document.getElementById('mail-docs-list').innerHTML = docs.map((d, i) =>
+        '<div class="card" style="margin-bottom:10px;border-left:4px solid var(--primary)">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">' +
+        '<div><strong>' + escapeHtml(d.subtipo) + '</strong> <span style="font-size:12px;color:var(--text-light)">' + escapeHtml(d.tipo) + '</span><br>' +
+        '<span style="font-size:13px;color:var(--text-light)">' + escapeHtml(d.cliente || '') + (d.producto ? ' · ' + d.producto : '') + '</span></div>' +
+        '<button class="btn btn-secondary btn-sm" onclick="generateMailDoc(' + i + ')">⬇️ Generar y Descargar</button></div>' +
+        '<p style="font-size:13px;color:var(--text-light);margin-top:8px">' + escapeHtml(d.descripcion || '') + '</p></div>'
+      ).join('');
+      window._mailDocs = docs;
+    }
+    if (supabaseClient) {
+      try { await supabaseClient.from('mails_procesados').insert({ texto_recibido: text, respuesta_generada: reply, documentos_generados: docs, procesado_en: new Date().toISOString() }); } catch(e) {}
+    }
+    document.getElementById('mail-result').scrollIntoView({ behavior: 'smooth' });
+    showToast('Mail procesado correctamente', 'success');
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+  finally { btn.disabled = false; btn.innerHTML = '📧 Procesar Mail con IA'; }
+}
+
+function copyReply() {
+  const t = document.getElementById('mail-reply').value;
+  navigator.clipboard.writeText(t).then(() => showToast('Respuesta copiada', 'success')).catch(() => showToast('Error copiando', 'error'));
+}
+
+async function generateMailDoc(idx) {
+  const d = (window._mailDocs || [])[idx];
+  if (!d) return;
+  const today = new Date().toISOString().split('T')[0];
+  showToast('Generando documento con IA...', 'info');
+  try {
+    const sys = 'Eres un experto en documentación técnica de calidad e inocuidad alimentaria. Genera documentos completos y profesionales en español.';
+    const resp = await callAI([{ role: 'user', content: 'Genera contenido completo para: "' + d.subtipo + '"\nCliente: ' + (d.cliente || 'N/A') + '\nProducto: ' + (d.producto || 'N/A') + '\nDescripción: ' + d.descripcion }], sys);
+    if (!resp) throw new Error('Sin respuesta');
+    const meta = { tipo: d.tipo, subtipo: d.subtipo, cliente: d.cliente || '', producto: d.producto || '', codigo: 'DOC-' + String(idx + 1).padStart(3, '0'), version: 'v1.0', fecha: today, descripcion: d.descripcion };
+    if (d.tipo === 'Word') await generateDocx(meta, resp);
+    else if (d.tipo === 'Excel') generateXlsx(meta, resp);
+    else generatePdf(meta, resp);
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+// ======================================================================
+// MODULE 5: OBSOLETOS
+// ======================================================================
+let obsoletos = [];
+
+function renderObsoletos() {
+  document.getElementById('content').innerHTML = `
+    <div class="module-header"><h2>🗄️ Documentos Obsoletos</h2><p>Gestione documentos archivados y pasados a obsolescencia</p></div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <div id="obsoletos-content">
+        <div style="text-align:center;padding:40px;color:var(--text-light)"><span class="spinner spinner-dark"></span><p style="margin-top:12px">Cargando...</p></div>
+      </div>
+    </div>`;
+  loadObsoletos();
+}
+
+async function loadObsoletos() {
+  if (!supabaseClient) {
+    const c = document.getElementById('obsoletos-content');
+    if (c) c.innerHTML = '<div class="empty-state"><div class="empty-icon">🔑</div><p>Configure Supabase para ver documentos obsoletos</p></div>';
+    return;
+  }
+  try {
+    const { data, error } = await supabaseClient.from('documentos_obsoletos').select('*').order('obsoleto_en', { ascending: false });
+    if (error) throw error;
+    obsoletos = data || [];
+    renderObsoletosTable();
+  } catch(e) {
+    const c = document.getElementById('obsoletos-content');
+    if (c) c.innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><p>Error: ' + escapeHtml(e.message) + '</p></div>';
+  }
+}
+
+function renderObsoletosTable() {
+  const c = document.getElementById('obsoletos-content');
+  if (!c) return;
+  if (!obsoletos.length) { c.innerHTML = '<div class="empty-state"><div class="empty-icon">🗄️</div><p>No hay documentos obsoletos</p></div>'; return; }
+  c.innerHTML = '<table class="data-table"><thead><tr><th>Nombre</th><th>Tipo</th><th>Fecha Obsolescencia</th><th>Acciones</th></tr></thead><tbody>' +
+    obsoletos.map(doc => '<tr><td><strong>' + escapeHtml(doc.nombre) + '</strong></td><td><span class="badge badge-' + (doc.tipo || '').toLowerCase() + '">' + escapeHtml(doc.tipo || '—') + '</span></td><td>' + formatDate(doc.obsoleto_en) + '</td><td><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-success btn-sm" onclick="restaurarDoc(\'' + doc.id + '\')">↩️ Restaurar</button><button class="btn btn-danger btn-sm" onclick="eliminarDefinitivo(\'' + doc.id + '\')">🗑️ Eliminar definitivamente</button></div></td></tr>').join('') +
+    '</tbody></table>';
+}
+
+async function restaurarDoc(id) {
+  const doc = obsoletos.find(d => d.id === id);
+  if (!doc || !supabaseClient) return;
+  if (!confirm('¿Restaurar "' + doc.nombre + '"?')) return;
+  try {
+    const { error: ie } = await supabaseClient.from('documentos').insert({ nombre: doc.nombre, tipo: doc.tipo, storage_url: doc.storage_url, storage_path: doc.storage_path, creado_en: new Date().toISOString() });
+    if (ie) throw ie;
+    const { error: de } = await supabaseClient.from('documentos_obsoletos').delete().eq('id', id);
+    if (de) throw de;
+    showToast('Documento restaurado', 'success');
+    loadObsoletos();
+    loadDocumentCount();
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+async function eliminarDefinitivo(id) {
+  const doc = obsoletos.find(d => d.id === id);
+  if (!doc || !supabaseClient) return;
+  if (!confirm('¿Eliminar DEFINITIVAMENTE "' + doc.nombre + '"? Esta acción no se puede deshacer.')) return;
+  try {
+    if (doc.storage_path) { try { await supabaseClient.storage.from('documentos').remove([doc.storage_path]); } catch(e) {} }
+    const { error } = await supabaseClient.from('documentos_obsoletos').delete().eq('id', id);
+    if (error) throw error;
+    showToast('Documento eliminado definitivamente', 'success');
+    loadObsoletos();
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+// ======================================================================
+// MODULE 6: AUDITORÍA INTERNA
+// ======================================================================
+function renderAuditoria() {
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('content').innerHTML = `
+    <div class="module-header"><h2>🔍 Auditoría Interna FSSC 22000</h2><p>Registre hallazgos y obtenga recomendaciones de acciones correctivas con IA</p></div>
+    <div class="card">
+      <div class="card-title">➕ Nuevo Hallazgo</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Cláusula FSSC 22000</label>
+          <input type="text" class="form-control" id="aud-clausula" placeholder="Ej: 8.5.2, 8.9.4, 7.2">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Área Auditada</label>
+          <input type="text" class="form-control" id="aud-area" placeholder="Ej: Producción, Almacén, RRHH">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Tipo de Hallazgo</label>
+          <select class="form-control" id="aud-tipo">
+            <option value="NC Mayor">NC Mayor</option>
+            <option value="NC Menor">NC Menor</option>
+            <option value="Observación">Observación</option>
+            <option value="Conforme">Conforme</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Fecha</label>
+          <input type="date" class="form-control" id="aud-fecha" value="${today}">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Descripción del Hallazgo</label>
+        <textarea class="form-control" id="aud-desc" style="min-height:100px" placeholder="Describa detalladamente el hallazgo encontrado durante la auditoría..."></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Evidencia Objetiva</label>
+        <textarea class="form-control" id="aud-evidencia" placeholder="Registros revisados, observaciones, fotos, entrevistas..."></textarea>
+      </div>
+      <button class="btn btn-primary" id="aud-btn" onclick="crearHallazgo()" style="width:100%;justify-content:center;padding:12px">
+        ✅ Crear Hallazgo y Obtener Acciones Correctivas
+      </button>
+    </div>
+    <div id="aud-suggestion" style="display:none" class="card">
+      <div class="card-title">🤖 Sugerencias de Acciones Correctivas (IA)</div>
+      <div id="aud-suggestion-content" style="font-size:14px;line-height:1.7;white-space:pre-wrap;background:var(--bg);padding:16px;border-radius:8px"></div>
+    </div>
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px">
+        <div class="card-title" style="margin:0">📋 Hallazgos Registrados</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-secondary btn-sm" onclick="exportarHallazgosExcel()">📊 Exportar Excel</button>
+          <button class="btn btn-secondary btn-sm" onclick="exportarHallazgosWord()">📝 Exportar Word</button>
+        </div>
+      </div>
+      <div id="hallazgos-list"><div style="text-align:center;padding:30px;color:var(--text-light)"><span class="spinner spinner-dark"></span></div></div>
+    </div>`;
+  loadHallazgos();
+}
+
+async function crearHallazgo() {
+  const clausula = document.getElementById('aud-clausula').value.trim();
+  const area = document.getElementById('aud-area').value.trim();
+  const tipo = document.getElementById('aud-tipo').value;
+  const fecha = document.getElementById('aud-fecha').value;
+  const descripcion = document.getElementById('aud-desc').value.trim();
+  const evidencia = document.getElementById('aud-evidencia').value.trim();
+  if (!clausula || !area || !descripcion) { showToast('Complete los campos obligatorios (cláusula, área, descripción)', 'warning'); return; }
+  const btn = document.getElementById('aud-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Procesando con IA...';
+  try {
+    const sys = 'Eres un auditor experto en FSSC 22000 e ISO 22000. Brindas recomendaciones de acciones correctivas detalladas, prácticas y alineadas con los requisitos normativos. Respondes en español de manera estructurada y profesional.';
+    const msg = 'Hallazgo de auditoría FSSC 22000:\n- Cláusula: ' + clausula + '\n- Área: ' + area + '\n- Tipo: ' + tipo + '\n- Descripción: ' + descripcion + '\n- Evidencia: ' + (evidencia || 'No especificada') + '\n\nProporciona:\n1. Análisis de la no conformidad e impacto en el sistema de gestión\n2. Causa raíz posible (análisis 5 ¿Por qué?)\n3. Acciones correctivas inmediatas (corrección)\n4. Acciones correctivas sistémicas (acción correctiva)\n5. Indicadores de seguimiento y verificación de eficacia\n6. Plazo recomendado para implementación';
+    const aiResp = await callAI([{ role: 'user', content: msg }], sys);
+    const h = { clausula_fssc: clausula, area, tipo, fecha, descripcion, evidencia, estado: 'Abierto', accion_correctiva: aiResp ? { sugerencia: aiResp } : null, creado_en: new Date().toISOString() };
+    if (supabaseClient) {
+      try { await supabaseClient.from('hallazgos').insert(h); } catch(e) { showToast('Error guardando en BD: ' + e.message, 'warning'); }
+    }
+    hallazgos.unshift({ ...h, id: 'local_' + Date.now() });
+    if (aiResp) {
+      document.getElementById('aud-suggestion').style.display = 'block';
+      document.getElementById('aud-suggestion-content').textContent = aiResp;
+      document.getElementById('aud-suggestion').scrollIntoView({ behavior: 'smooth' });
+    }
+    renderHallazgosList();
+    showToast('Hallazgo creado correctamente', 'success');
+    ['aud-clausula', 'aud-area', 'aud-desc', 'aud-evidencia'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+  finally { btn.disabled = false; btn.innerHTML = '✅ Crear Hallazgo y Obtener Acciones Correctivas'; }
+}
+
+async function loadHallazgos() {
+  if (!supabaseClient) { renderHallazgosList(); return; }
+  try {
+    const { data, error } = await supabaseClient.from('hallazgos').select('*').order('creado_en', { ascending: false });
+    if (error) throw error;
+    hallazgos = data || [];
+  } catch(e) { hallazgos = []; }
+  renderHallazgosList();
+}
+
+const tipoColorMap = { 'NC Mayor': '#ef4444', 'NC Menor': '#f59e0b', 'Observación': '#3b82f6', 'Conforme': '#10b981' };
+const tipoBadgeMap = { 'NC Mayor': 'tipo-nc-mayor', 'NC Menor': 'tipo-nc-menor', 'Observación': 'tipo-observacion', 'Conforme': 'tipo-conforme' };
+
+function renderHallazgosList() {
+  const c = document.getElementById('hallazgos-list');
+  if (!c) return;
+  if (!hallazgos.length) { c.innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div><p>No hay hallazgos registrados</p></div>'; return; }
+  c.innerHTML = hallazgos.map((h, i) => {
+    const col = tipoColorMap[h.tipo] || '#6b7280';
+    const hasAI = h.accion_correctiva && h.accion_correctiva.sugerencia;
+    return '<div class="hallazgo-card" style="border-left:4px solid ' + col + '">' +
+      '<div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px">' +
+      '<div><span class="hallazgo-tipo ' + (tipoBadgeMap[h.tipo] || '') + '">' + escapeHtml(h.tipo) + '</span>' +
+      '<span style="font-size:12px;color:var(--text-light);margin-left:8px">Cláusula: ' + escapeHtml(h.clausula_fssc || '—') + '</span></div>' +
+      '<div style="display:flex;align-items:center;gap:8px">' +
+      '<span style="font-size:12px;color:var(--text-light)">' + formatDate(h.fecha || h.creado_en) + '</span>' +
+      (hasAI ? '<button class="btn btn-secondary btn-sm" onclick="toggleDetails(\'det' + i + '\')">🤖 Ver IA</button>' : '') + '</div></div>' +
+      '<p style="margin-top:8px;font-size:14px;font-weight:600">' + escapeHtml(h.area || '—') + '</p>' +
+      '<p style="margin-top:4px;font-size:14px;color:var(--text-light)">' + escapeHtml(h.descripcion || '') + '</p>' +
+      (h.evidencia ? '<p style="margin-top:4px;font-size:12px;color:var(--text-light)">Evidencia: ' + escapeHtml(h.evidencia) + '</p>' : '') +
+      (hasAI ? '<div id="det' + i + '" class="hallazgo-details"><div class="ai-suggestion"><div class="ai-suggestion-title">🤖 Sugerencias de la IA</div><p>' + escapeHtml(h.accion_correctiva.sugerencia) + '</p></div></div>' : '') +
+      '</div>';
+  }).join('');
+}
+
+function toggleDetails(id) { const el = document.getElementById(id); if (el) el.classList.toggle('open'); }
+
+function exportarHallazgosExcel() {
+  if (!hallazgos.length) { showToast('No hay hallazgos para exportar', 'warning'); return; }
+  const wb = XLSX.utils.book_new();
+  const rows = [['Cláusula FSSC', 'Área', 'Tipo', 'Fecha', 'Descripción', 'Evidencia', 'Estado', 'Acción Correctiva IA']];
+  hallazgos.forEach(h => rows.push([h.clausula_fssc || '', h.area || '', h.tipo || '', h.fecha || formatDate(h.creado_en), h.descripcion || '', h.evidencia || '', h.estado || '', h.accion_correctiva?.sugerencia || '']));
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = rows[0].map(() => ({ wch: 30 }));
+  XLSX.utils.book_append_sheet(wb, ws, 'Hallazgos');
+  XLSX.writeFile(wb, 'Hallazgos_Auditoria_' + new Date().toISOString().split('T')[0] + '.xlsx');
+  showToast('Excel exportado', 'success');
+}
+
+async function exportarHallazgosWord() {
+  if (!hallazgos.length) { showToast('No hay hallazgos para exportar', 'warning'); return; }
+  try {
+    const { Document, Paragraph, TextRun, HeadingLevel, AlignmentType, Packer } = window.docx;
+    const children = [
+      new Paragraph({ children: [new TextRun({ text: 'Informe de Auditoría Interna FSSC 22000', bold: true, size: 32, color: '003399' })], heading: HeadingLevel.TITLE, alignment: AlignmentType.CENTER }),
+      new Paragraph({ children: [new TextRun({ text: 'Fecha: ' + new Date().toLocaleDateString('es-AR') + ' | Total hallazgos: ' + hallazgos.length, size: 20, color: '666666' })], alignment: AlignmentType.CENTER }),
+      new Paragraph({ children: [new TextRun({ text: '' })] })
+    ];
+    const colorMap = { 'NC Mayor': 'ef4444', 'NC Menor': 'f59e0b', 'Observación': '3b82f6', 'Conforme': '10b981' };
+    hallazgos.forEach((h, i) => {
+      children.push(new Paragraph({ children: [new TextRun({ text: (i + 1) + '. ' + h.tipo + ' — Cláusula ' + (h.clausula_fssc || '—'), bold: true, size: 24, color: colorMap[h.tipo] || '003399' })], heading: HeadingLevel.HEADING_2 }));
+      children.push(new Paragraph({ children: [new TextRun({ text: 'Área: ' + (h.area || '—') + ' | Fecha: ' + (h.fecha || formatDate(h.creado_en)), size: 18, color: '666666' })] }));
+      children.push(new Paragraph({ children: [new TextRun({ text: 'Descripción: ', bold: true, size: 20 }), new TextRun({ text: h.descripcion || '', size: 20 })] }));
+      if (h.evidencia) children.push(new Paragraph({ children: [new TextRun({ text: 'Evidencia: ', bold: true, size: 20 }), new TextRun({ text: h.evidencia, size: 20 })] }));
+      if (h.accion_correctiva?.sugerencia) {
+        children.push(new Paragraph({ children: [new TextRun({ text: 'Acciones Correctivas (IA):', bold: true, size: 20, color: '003399' })] }));
+        h.accion_correctiva.sugerencia.split('\n').filter(l => l.trim()).forEach(l => children.push(new Paragraph({ children: [new TextRun({ text: l.replace(/\*\*/g, ''), size: 18 })] })));
+      }
+      children.push(new Paragraph({ children: [new TextRun({ text: '' })] }));
+    });
+    const doc = new Document({ sections: [{ children }] });
+    const blob = await Packer.toBlob(doc);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'Informe_Auditoria_' + new Date().toISOString().split('T')[0] + '.docx';
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Word exportado', 'success');
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+// ===== UTILS =====
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function formatDate(dateStr) {
+  if (!dateStr) return '—';
+  try { return new Date(dateStr).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }); }
+  catch(e) { return dateStr; }
+}
+</script>
+</body>
+</html>

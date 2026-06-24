@@ -1,0 +1,14 @@
+[build]
+  publish = "."
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Content-Security-Policy = "default-src 'self' 'unsafe-inline' 'unsafe-eval' https://api.anthropic.com https://*.supabase.co https://unpkg.com https://cdn.sheetjs.com https://cdnjs.cloudflare.com; connect-src 'self' https://api.anthropic.com https://*.supabase.co; img-src 'self' data: blob:;"
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+
+[[redirects]]
+  from = "/*"
+  to = "/app.html"
+  status = 200
