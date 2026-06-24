@@ -568,9 +568,13 @@ async function uploadFiles(files) {
       const { error: se } = await supabaseClient.storage.from('documentos').upload(path, file);
       if (se) throw se;
       const { data: ud } = supabaseClient.storage.from('documentos').getPublicUrl(path);
+      // Asegurar que la URL tenga /public/ para acceso público
+      const publicUrl = ud.publicUrl.includes('/object/public/')
+        ? ud.publicUrl
+        : ud.publicUrl.replace('/object/', '/object/public/');
       const { error: de } = await supabaseClient.from('documentos').insert({
         nombre: file.name, tipo: ext.toUpperCase(),
-        storage_url: ud.publicUrl, storage_path: path,
+        storage_url: publicUrl, storage_path: path,
         tamano: file.size, creado_en: new Date().toISOString()
       });
       if (de) throw de;
