@@ -179,6 +179,20 @@ def salud():
     return {"servicio": "Ingeniero de Calidad IA - conversión/edición", "libreoffice": ok, "ruta": soffice}
 
 
+@app.get("/fonts")
+def fonts():
+    """Diagnóstico: lista las fuentes instaladas relevantes (para verificar Arial Narrow, etc.)."""
+    try:
+        out = subprocess.run(["fc-list", ":", "family"], capture_output=True, timeout=20)
+        familias = sorted(set(
+            f.strip() for line in out.stdout.decode("utf-8", "ignore").splitlines() for f in line.split(",") if f.strip()
+        ))
+        clave = [f for f in familias if any(k in f.lower() for k in ("narrow", "liberation", "carlito", "caladea", "dejavu", "arial"))]
+        return {"total": len(familias), "relevantes": clave}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.post("/convertir-pdf")
 async def convertir_pdf(archivo: UploadFile = File(...)):
     """Recibe un .docx y devuelve el PDF EXACTO (vía LibreOffice)."""

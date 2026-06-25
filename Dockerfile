@@ -7,13 +7,17 @@ FROM python:3.11-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libreoffice-writer \
     libreoffice-core \
+    fontconfig \
     fonts-dejavu \
     fonts-liberation \
     fonts-liberation2 \
     fonts-crosextra-carlito \
     fonts-crosextra-caladea \
-    && fc-cache -f \
     && rm -rf /var/lib/apt/lists/*
+
+# Mapeo de fuentes Microsoft -> equivalentes (incluye Arial Narrow -> Liberation Sans Narrow)
+COPY fonts-local.conf /etc/fonts/local.conf
+RUN fc-cache -f
 
 WORKDIR /app
 
