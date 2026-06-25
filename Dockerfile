@@ -16,8 +16,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY servidor.py .
 
-# Railway inyecta el puerto en $PORT
+# Railway inyecta el puerto en $PORT; servidor.py lo lee de os.environ
 ENV PORT=8000
 EXPOSE 8000
 
-CMD ["sh", "-c", "uvicorn servidor:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Arranque simple: Python lee PORT del entorno (sin expansión de variables en la CMD)
+CMD ["python", "servidor.py"]
