@@ -443,112 +443,120 @@ function descargarBlob(blob, nombre) {
   URL.revokeObjectURL(url);
 }
 
-// Convierte el Word seleccionado a PDF EXACTO usando el servidor
-async function convertirAPdfExacto() {
+// --- CORE: convierte un documento (objeto) a PDF exacto y lo descarga ---
+async function convertirDocAPdf(doc) {
   const api = getConvertApi();
-  if (!api) { showToast('Configure la URL del servidor de conversión (⚙)', 'error'); return; }
+  if (!api) { showToast('Configure la URL del servidor de conversión (⚙)', 'error'); return false; }
+  if (!doc) return false;
+  const file = await fetchDocxComoFile(doc);
+  const fd = new FormData();
+  fd.append('archivo', file);
+  const resp = await fetch(api + '/convertir-pdf', { method: 'POST', body: fd });
+  if (!resp.ok) throw new Error(await resp.text());
+  const pdfBlob = await resp.blob();
+  descargarBlob(pdfBlob, doc.nombre.replace(/\.docx?$/i, '') + '.pdf');
+  return true;
+}
+
+// Wrapper para el panel del documento seleccionado
+async function convertirAPdfExacto() {
   const doc = uploadedDocs.find(d => d.id === selectedDocId);
   if (!doc) return;
   const btn = document.getElementById('conv-btn-text');
-  btn.innerHTML = '<span class="spinner"></span> Convirtiendo...';
+  if (btn) btn.innerHTML = '<span class="spinner"></span> Convirtiendo...';
   try {
-    const file = await fetchDocxComoFile(doc);
-    const fd = new FormData();
-    fd.append('archivo', file);
-    const resp = await fetch(api + '/convertir-pdf', { method: 'POST', body: fd });
-    if (!resp.ok) throw new Error(await resp.text());
-    const pdfBlob = await resp.blob();
-    descargarBlob(pdfBlob, doc.nombre.replace(/\.docx?$/i, '') + '.pdf');
-    showToast('PDF exacto generado', 'success');
+    if (await convertirDocAPdf(doc)) showToast('PDF exacto generado', 'success');
   } catch(e) { showToast('Error al convertir: ' + e.message, 'error'); }
-  finally { btn.innerHTML = '📄 Convertir a PDF exacto'; }
+  finally { if (btn) btn.innerHTML = '📄 Convertir a PDF exacto'; }
 }
 
-// Edita el Word con IA: pide cambios, sube revisión, manda viejo a obsoletos, ofrece PDF
-async function editarWordConIA() {
+// --- CORE: edita un Word con IA, sube revisión, manda viejo a obsoletos, ofrece PDF ---
+// Devuelve el File de la nueva versión (o null si no se aplicó nada).
+async function editarWordFlow(doc, instruccion) {
   const api = getConvertApi();
-  if (!api) { showToast('Configure la URL del servidor de conversión (⚙)', 'error'); return; }
-  if (!supabaseClient) { showToast('Configure Supabase', 'error'); return; }
+  if (!api) { showToast('Configure la URL del servidor de conversión (⚙)', 'error'); return null; }
+  if (!supabaseClient) { showToast('Configure Supabase', 'error'); return null; }
+  if (!doc || !instruccion) return null;
+
+  // 1) Pedirle a la IA los pares buscar/reemplazar concretos según el contenido real
+  const sys = 'Sos un asistente que traduce instrucciones de edición a reemplazos de texto EXACTOS sobre un documento Word. Solo podés reemplazar texto que exista textualmente en el documento. Responde ÚNICAMENTE con un array JSON.';
+  const contexto = doc.contenido_texto ? '\n\nTEXTO ACTUAL DEL DOCUMENTO:\n' + doc.contenido_texto.slice(0, 30000) : '';
+  const msg = 'Documento: "' + doc.nombre + '"' + contexto + '\n\nInstrucción del usuario: ' + instruccion +
+    '\n\nDevolvé los reemplazos exactos a realizar. El texto en "buscar" DEBE aparecer tal cual en el documento. Formato JSON estricto (sin texto adicional):\n[{"buscar":"texto exacto actual","reemplazar":"texto nuevo"}]\nNo incluyas el número de revisión (se actualiza automáticamente). Si no podés identificar texto exacto, devolvé [].';
+  const resp = await callAI([{ role: 'user', content: msg }], sys);
+  let pares;
+  try {
+    const jm = resp.match(/```(?:json)?\s*([\s\S]*?)```/) || resp.match(/(\[[\s\S]*\])/);
+    pares = JSON.parse((jm ? jm[1] : resp).trim());
+  } catch(e) { throw new Error('La IA no devolvió reemplazos válidos'); }
+  if (!Array.isArray(pares) || !pares.length) {
+    throw new Error('No se identificó texto exacto para cambiar. Probá ser más específico.');
+  }
+  const resumen = pares.map(p => '• "' + p.buscar + '" → "' + p.reemplazar + '"').join('\n');
+  if (!confirm('Se aplicarán estos cambios:\n\n' + resumen + '\n\n¿Continuar?')) return null;
+
+  // 2) Editar el .docx en el servidor preservando formato + subir revisión
+  const file = await fetchDocxComoFile(doc);
+  const fd = new FormData();
+  fd.append('archivo', file);
+  fd.append('reemplazos', JSON.stringify(pares));
+  fd.append('subir_revision', 'true');
+  const r2 = await fetch(api + '/editar-word', { method: 'POST', body: fd });
+  if (!r2.ok) throw new Error(await r2.text());
+  const nuevaRev = r2.headers.get('X-Nueva-Revision') || '';
+  const nuevoBlob = await r2.blob();
+
+  // 3) Mandar el documento VIEJO a obsoletos (misma carpeta)
+  const carpeta = doc.carpeta || 'General';
+  await supabaseClient.from('documentos_obsoletos').insert({
+    nombre: doc.nombre, tipo: doc.tipo, storage_url: doc.storage_url,
+    storage_path: doc.storage_path, carpeta: carpeta, obsoleto_en: new Date().toISOString()
+  });
+  await supabaseClient.from('documentos').delete().eq('id', doc.id);
+
+  // 4) Subir la NUEVA versión a Storage (misma carpeta)
+  const nuevoFile = new File([nuevoBlob], doc.nombre, { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+  const nuevoPath = carpeta + '/' + Date.now() + '_' + doc.nombre;
+  const { error: se } = await supabaseClient.storage.from('documentos').upload(nuevoPath, nuevoFile);
+  if (se) throw se;
+  const { data: ud } = supabaseClient.storage.from('documentos').getPublicUrl(nuevoPath);
+  const nuevoUrl = ud.publicUrl.includes('/object/public/') ? ud.publicUrl : ud.publicUrl.replace('/object/', '/object/public/');
+  let nuevoTexto = '';
+  try { nuevoTexto = await extraerTexto(nuevoFile, 'docx'); } catch(e) {}
+  await supabaseClient.from('documentos').insert({
+    nombre: doc.nombre, tipo: doc.tipo, storage_url: nuevoUrl, storage_path: nuevoPath,
+    tamano: nuevoFile.size, carpeta: carpeta,
+    contenido_texto: nuevoTexto ? nuevoTexto.slice(0, 50000) : null,
+    creado_en: new Date().toISOString()
+  });
+
+  showToast('✅ Cambios aplicados' + (nuevaRev ? ' · Revisión → ' + nuevaRev : '') + '. El anterior pasó a Obsoletos.', 'success');
+  await loadDocuments();
+  loadDocumentCount();
+  return nuevoFile;
+}
+
+// Wrapper para el panel del documento seleccionado
+async function editarWordConIA() {
   const doc = uploadedDocs.find(d => d.id === selectedDocId);
   if (!doc) return;
   const instruccion = document.getElementById('edit-ia-instruccion').value.trim();
   if (!instruccion) { showToast('Escribí qué querés cambiar', 'warning'); return; }
   const btn = document.getElementById('edit-ia-btn-text');
-  btn.innerHTML = '<span class="spinner"></span> Procesando...';
+  if (btn) btn.innerHTML = '<span class="spinner"></span> Procesando...';
   try {
-    // 1) Pedirle a la IA los pares buscar/reemplazar concretos según el contenido real
-    const sys = 'Sos un asistente que traduce instrucciones de edición a reemplazos de texto EXACTOS sobre un documento Word. Solo podés reemplazar texto que exista textualmente en el documento. Responde ÚNICAMENTE con un array JSON.';
-    const contexto = doc.contenido_texto ? '\n\nTEXTO ACTUAL DEL DOCUMENTO:\n' + doc.contenido_texto.slice(0, 30000) : '';
-    const msg = 'Documento: "' + doc.nombre + '"' + contexto + '\n\nInstrucción del usuario: ' + instruccion +
-      '\n\nDevolvé los reemplazos exactos a realizar. El texto en "buscar" DEBE aparecer tal cual en el documento. Formato JSON estricto (sin texto adicional):\n[{"buscar":"texto exacto actual","reemplazar":"texto nuevo"}]\nNo incluyas el número de revisión (se actualiza automáticamente). Si no podés identificar texto exacto, devolvé [].';
-    const resp = await callAI([{ role: 'user', content: msg }], sys);
-    let pares;
-    try {
-      const jm = resp.match(/```(?:json)?\s*([\s\S]*?)```/) || resp.match(/(\[[\s\S]*\])/);
-      pares = JSON.parse((jm ? jm[1] : resp).trim());
-    } catch(e) { throw new Error('La IA no devolvió reemplazos válidos'); }
-    if (!Array.isArray(pares) || !pares.length) {
-      throw new Error('No se identificó texto exacto para cambiar. Probá ser más específico (copiá el texto tal cual está en el documento).');
-    }
-    // Confirmar cambios al usuario
-    const resumen = pares.map(p => '• "' + p.buscar + '" → "' + p.reemplazar + '"').join('\n');
-    if (!confirm('Se aplicarán estos cambios:\n\n' + resumen + '\n\n¿Continuar?')) { btn.innerHTML = '✏️ Aplicar cambios y subir revisión'; return; }
-
-    // 2) Enviar al servidor para editar el .docx preservando formato + subir revisión
-    const file = await fetchDocxComoFile(doc);
-    const fd = new FormData();
-    fd.append('archivo', file);
-    fd.append('reemplazos', JSON.stringify(pares));
-    fd.append('subir_revision', 'true');
-    const r2 = await fetch(api + '/editar-word', { method: 'POST', body: fd });
-    if (!r2.ok) throw new Error(await r2.text());
-    const nuevaRev = r2.headers.get('X-Nueva-Revision') || '';
-    const nuevoBlob = await r2.blob();
-
-    // 3) Mandar el documento VIEJO a obsoletos (misma carpeta)
-    const carpeta = doc.carpeta || 'General';
-    await supabaseClient.from('documentos_obsoletos').insert({
-      nombre: doc.nombre, tipo: doc.tipo, storage_url: doc.storage_url,
-      storage_path: doc.storage_path, carpeta: carpeta, obsoleto_en: new Date().toISOString()
-    });
-    await supabaseClient.from('documentos').delete().eq('id', doc.id);
-
-    // 4) Subir la NUEVA versión a Storage (misma carpeta)
-    const nuevoFile = new File([nuevoBlob], doc.nombre, { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
-    const nuevoPath = carpeta + '/' + Date.now() + '_' + doc.nombre;
-    const { error: se } = await supabaseClient.storage.from('documentos').upload(nuevoPath, nuevoFile);
-    if (se) throw se;
-    const { data: ud } = supabaseClient.storage.from('documentos').getPublicUrl(nuevoPath);
-    const nuevoUrl = ud.publicUrl.includes('/object/public/') ? ud.publicUrl : ud.publicUrl.replace('/object/', '/object/public/');
-    // Re-extraer texto de la nueva versión
-    let nuevoTexto = '';
-    try { nuevoTexto = await extraerTexto(nuevoFile, 'docx'); } catch(e) {}
-    await supabaseClient.from('documentos').insert({
-      nombre: doc.nombre, tipo: doc.tipo, storage_url: nuevoUrl, storage_path: nuevoPath,
-      tamano: nuevoFile.size, carpeta: carpeta,
-      contenido_texto: nuevoTexto ? nuevoTexto.slice(0, 50000) : null,
-      creado_en: new Date().toISOString()
-    });
-
-    showToast('✅ Cambios aplicados' + (nuevaRev ? ' · Revisión → ' + nuevaRev : '') + '. El anterior pasó a Obsoletos.', 'success');
-    document.getElementById('edit-ia-instruccion').value = '';
-    await loadDocuments();
-    loadDocumentCount();
-
-    // 5) Ofrecer PDF de la nueva versión
-    if (confirm('¿Querés el PDF de la nueva versión?')) {
-      const fd2 = new FormData();
-      fd2.append('archivo', nuevoFile);
-      const r3 = await fetch(api + '/convertir-pdf', { method: 'POST', body: fd2 });
-      if (r3.ok) {
-        const pdfBlob = await r3.blob();
-        descargarBlob(pdfBlob, doc.nombre.replace(/\.docx?$/i, '') + '.pdf');
-        showToast('PDF de la nueva versión descargado', 'success');
-      } else {
-        showToast('No se pudo generar el PDF', 'error');
+    const nuevoFile = await editarWordFlow(doc, instruccion);
+    if (nuevoFile) {
+      document.getElementById('edit-ia-instruccion').value = '';
+      if (confirm('¿Querés el PDF de la nueva versión?')) {
+        const api = getConvertApi();
+        const fd2 = new FormData();
+        fd2.append('archivo', nuevoFile);
+        const r3 = await fetch(api + '/convertir-pdf', { method: 'POST', body: fd2 });
+        if (r3.ok) { descargarBlob(await r3.blob(), doc.nombre.replace(/\.docx?$/i, '') + '.pdf'); showToast('PDF descargado', 'success'); }
       }
     }
   } catch(e) { showToast('Error: ' + e.message, 'error'); }
-  finally { btn.innerHTML = '✏️ Aplicar cambios y subir revisión'; }
+  finally { if (btn) btn.innerHTML = '✏️ Aplicar cambios y subir revisión'; }
 }
 
