@@ -17,6 +17,8 @@ document.addEventListener('DOMContentLoaded', () => {
   initSupabase();
   switchModule('consultas');
   loadDocumentCount();
+  // Cartel de agenda al abrir (tareas de hoy, próximas, repaso de viernes)
+  setTimeout(() => { if (typeof mostrarCartelDiario === 'function') mostrarCartelDiario(); }, 1000);
 });
 
 // ===== CONFIG =====
@@ -118,6 +120,7 @@ const moduleInfo = {
   consultas:  { title: 'Consultas IA', desc: 'Asistente experto en FSSC 22000' },
   documentos: { title: 'Gestión de Documentos', desc: 'Administre y procese documentos con IA' },
   conocimiento: { title: 'Base de Conocimiento', desc: 'Memoria de la empresa que la IA usa como contexto' },
+  agenda:     { title: 'Agenda', desc: 'Calendario y seguimiento de tareas' },
   generador:  { title: 'Generador de Documentos', desc: 'Cree documentos profesionales con IA' },
   mails:      { title: 'Gestor de Mails', desc: 'Procese correos electrónicos con IA' },
   obsoletos:  { title: 'Documentos Obsoletos', desc: 'Gestione documentos archivados' },
@@ -131,7 +134,7 @@ function switchModule(mod) {
   document.getElementById('topbar-title').textContent = info.title;
   document.getElementById('topbar-desc').textContent = info.desc;
   document.getElementById('content').innerHTML = '';
-  const renders = { consultas: renderConsultas, documentos: renderDocumentos, conocimiento: renderConocimiento, generador: renderGenerador, mails: renderMails, obsoletos: renderObsoletos, auditoria: renderAuditoria };
+  const renders = { consultas: renderConsultas, documentos: renderDocumentos, conocimiento: renderConocimiento, agenda: renderAgenda, generador: renderGenerador, mails: renderMails, obsoletos: renderObsoletos, auditoria: renderAuditoria };
   renders[mod]();
   closeSidebar();
 }
