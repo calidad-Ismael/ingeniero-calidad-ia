@@ -4,7 +4,7 @@
 [[headers]]
   for = "/*"
   [headers.values]
-    Content-Security-Policy = "default-src 'self' 'unsafe-inline' 'unsafe-eval' https://api.anthropic.com https://*.supabase.co https://unpkg.com https://cdn.sheetjs.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://unpkg.com https://cdn.sheetjs.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; worker-src 'self' blob: https://cdnjs.cloudflare.com; connect-src 'self' https://api.anthropic.com https://*.supabase.co https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline';"
+    Content-Security-Policy = "default-src 'self' 'unsafe-inline' 'unsafe-eval' https://api.anthropic.com https://*.supabase.co https://unpkg.com https://cdn.sheetjs.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://unpkg.com https://cdn.sheetjs.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; worker-src 'self' blob: https://cdnjs.cloudflare.com; connect-src 'self' https://api.anthropic.com https://*.supabase.co https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://*.railway.app https://*.up.railway.app; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline';"
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
 

@@ -290,6 +290,11 @@ textarea.form-control{resize:vertical;min-height:80px}
       <label class="form-label">Supabase Anon Key</label>
       <input type="password" id="cfg-supabase-key" class="form-control" placeholder="eyJ...">
     </div>
+    <div class="form-group">
+      <label class="form-label">URL del servidor de conversión (Railway) <span style="color:var(--text-light);font-weight:400">— opcional</span></label>
+      <input type="text" id="cfg-convert-api" class="form-control" placeholder="https://tu-app.railway.app">
+      <p style="font-size:12px;color:var(--text-light);margin-top:4px">Para convertir Word a PDF exacto y editar Word preservando formato. Si lo dejás vacío, esas funciones quedan deshabilitadas.</p>
+    </div>
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px">
       <button class="btn btn-secondary" onclick="closeConfig()">Cancelar</button>
       <button class="btn btn-primary" onclick="saveConfig()">💾 Guardar</button>
@@ -327,7 +332,12 @@ function openConfig() {
   document.getElementById('cfg-anthropic').value = localStorage.getItem('iq_anthropic_key') || '';
   document.getElementById('cfg-supabase-url').value = localStorage.getItem('iq_supabase_url') || '';
   document.getElementById('cfg-supabase-key').value = localStorage.getItem('iq_supabase_key') || '';
+  document.getElementById('cfg-convert-api').value = localStorage.getItem('iq_convert_api') || '';
   document.getElementById('config-modal').style.display = 'flex';
+}
+
+function getConvertApi() {
+  return (localStorage.getItem('iq_convert_api') || '').replace(/\/+$/, '');
 }
 
 function closeConfig() {
@@ -339,9 +349,11 @@ function saveConfig() {
   const url = document.getElementById('cfg-supabase-url').value.trim();
   const sk = document.getElementById('cfg-supabase-key').value.trim();
   if (!key || !url || !sk) { showToast('Complete todos los campos', 'error'); return; }
+  const convertApi = document.getElementById('cfg-convert-api').value.trim();
   localStorage.setItem('iq_anthropic_key', key);
   localStorage.setItem('iq_supabase_url', url);
   localStorage.setItem('iq_supabase_key', sk);
+  localStorage.setItem('iq_convert_api', convertApi);
   closeConfig();
   initSupabase();
   loadDocumentCount();
@@ -583,6 +595,18 @@ function renderDocumentos() {
             <button class="btn btn-secondary btn-sm" onclick="markObsolete()">🗄️ Pasar a Obsoleto</button>
             <button class="btn btn-danger btn-sm" onclick="eliminarDoc()">🗑️ Eliminar</button>
           </div>
+          <div id="word-tools" style="display:none;margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
+            <div style="font-weight:700;font-size:13px;color:var(--primary);margin-bottom:10px">🔧 Herramientas Word (servidor de conversión)</div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+              <button class="btn btn-accent btn-sm" onclick="convertirAPdfExacto()"><span id="conv-btn-text">📄 Convertir a PDF exacto</span></button>
+            </div>
+            <div class="form-group" style="margin-bottom:8px">
+              <label class="form-label">✏️ Editar con IA (cambia el contenido y sube la revisión)</label>
+              <textarea class="form-control" id="edit-ia-instruccion" style="min-height:70px" placeholder="Ej: Cambiá el tamaño de 50 mm a 60 mm. Cambiá la temperatura de sellado a 180°C..."></textarea>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="editarWordConIA()"><span id="edit-ia-btn-text">✏️ Aplicar cambios y subir revisión</span></button>
+            <p style="font-size:12px;color:var(--text-light);margin-top:6px">El documento viejo pasa a Obsoletos (misma carpeta) y se sube la nueva versión con la revisión incrementada.</p>
+          </div>
         </div>
         <div id="ai-result-panel"></div>
       </div>
@@ -798,6 +822,10 @@ function selectDoc(id) {
     document.getElementById('selected-doc-title').textContent = '📄 ' + doc.nombre;
     const inp = document.getElementById('edit-nombre');
     if (inp) inp.value = doc.nombre;
+    // Herramientas Word solo para .docx y si hay servidor de conversión configurado
+    const wt = document.getElementById('word-tools');
+    const esWord = (doc.tipo || '').toUpperCase() === 'DOCX' || /\.docx?$/i.test(doc.nombre);
+    if (wt) wt.style.display = (esWord && getConvertApi()) ? 'block' : 'none';
     panel.style.display = 'block';
   } else {
     panel.style.display = 'none';
@@ -839,6 +867,134 @@ async function eliminarDoc() {
     await loadDocuments();
     loadDocumentCount();
   } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+// ======================================================================
+// HERRAMIENTAS WORD (servidor de conversión LibreOffice en Railway)
+// ======================================================================
+
+// Descarga el .docx desde Supabase Storage como File
+async function fetchDocxComoFile(doc) {
+  const resp = await fetch(doc.storage_url);
+  if (!resp.ok) throw new Error('No se pudo descargar el archivo (' + resp.status + ')');
+  const blob = await resp.blob();
+  return new File([blob], doc.nombre, { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+}
+
+function descargarBlob(blob, nombre) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = nombre; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Convierte el Word seleccionado a PDF EXACTO usando el servidor
+async function convertirAPdfExacto() {
+  const api = getConvertApi();
+  if (!api) { showToast('Configure la URL del servidor de conversión (⚙)', 'error'); return; }
+  const doc = uploadedDocs.find(d => d.id === selectedDocId);
+  if (!doc) return;
+  const btn = document.getElementById('conv-btn-text');
+  btn.innerHTML = '<span class="spinner"></span> Convirtiendo...';
+  try {
+    const file = await fetchDocxComoFile(doc);
+    const fd = new FormData();
+    fd.append('archivo', file);
+    const resp = await fetch(api + '/convertir-pdf', { method: 'POST', body: fd });
+    if (!resp.ok) throw new Error(await resp.text());
+    const pdfBlob = await resp.blob();
+    descargarBlob(pdfBlob, doc.nombre.replace(/\.docx?$/i, '') + '.pdf');
+    showToast('PDF exacto generado', 'success');
+  } catch(e) { showToast('Error al convertir: ' + e.message, 'error'); }
+  finally { btn.innerHTML = '📄 Convertir a PDF exacto'; }
+}
+
+// Edita el Word con IA: pide cambios, sube revisión, manda viejo a obsoletos, ofrece PDF
+async function editarWordConIA() {
+  const api = getConvertApi();
+  if (!api) { showToast('Configure la URL del servidor de conversión (⚙)', 'error'); return; }
+  if (!supabaseClient) { showToast('Configure Supabase', 'error'); return; }
+  const doc = uploadedDocs.find(d => d.id === selectedDocId);
+  if (!doc) return;
+  const instruccion = document.getElementById('edit-ia-instruccion').value.trim();
+  if (!instruccion) { showToast('Escribí qué querés cambiar', 'warning'); return; }
+  const btn = document.getElementById('edit-ia-btn-text');
+  btn.innerHTML = '<span class="spinner"></span> Procesando...';
+  try {
+    // 1) Pedirle a la IA los pares buscar/reemplazar concretos según el contenido real
+    const sys = 'Sos un asistente que traduce instrucciones de edición a reemplazos de texto EXACTOS sobre un documento Word. Solo podés reemplazar texto que exista textualmente en el documento. Responde ÚNICAMENTE con un array JSON.';
+    const contexto = doc.contenido_texto ? '\n\nTEXTO ACTUAL DEL DOCUMENTO:\n' + doc.contenido_texto.slice(0, 30000) : '';
+    const msg = 'Documento: "' + doc.nombre + '"' + contexto + '\n\nInstrucción del usuario: ' + instruccion +
+      '\n\nDevolvé los reemplazos exactos a realizar. El texto en "buscar" DEBE aparecer tal cual en el documento. Formato JSON estricto (sin texto adicional):\n[{"buscar":"texto exacto actual","reemplazar":"texto nuevo"}]\nNo incluyas el número de revisión (se actualiza automáticamente). Si no podés identificar texto exacto, devolvé [].';
+    const resp = await callAI([{ role: 'user', content: msg }], sys);
+    let pares;
+    try {
+      const jm = resp.match(/```(?:json)?\s*([\s\S]*?)```/) || resp.match(/(\[[\s\S]*\])/);
+      pares = JSON.parse((jm ? jm[1] : resp).trim());
+    } catch(e) { throw new Error('La IA no devolvió reemplazos válidos'); }
+    if (!Array.isArray(pares) || !pares.length) {
+      throw new Error('No se identificó texto exacto para cambiar. Probá ser más específico (copiá el texto tal cual está en el documento).');
+    }
+    // Confirmar cambios al usuario
+    const resumen = pares.map(p => '• "' + p.buscar + '" → "' + p.reemplazar + '"').join('\n');
+    if (!confirm('Se aplicarán estos cambios:\n\n' + resumen + '\n\n¿Continuar?')) { btn.innerHTML = '✏️ Aplicar cambios y subir revisión'; return; }
+
+    // 2) Enviar al servidor para editar el .docx preservando formato + subir revisión
+    const file = await fetchDocxComoFile(doc);
+    const fd = new FormData();
+    fd.append('archivo', file);
+    fd.append('reemplazos', JSON.stringify(pares));
+    fd.append('subir_revision', 'true');
+    const r2 = await fetch(api + '/editar-word', { method: 'POST', body: fd });
+    if (!r2.ok) throw new Error(await r2.text());
+    const nuevaRev = r2.headers.get('X-Nueva-Revision') || '';
+    const nuevoBlob = await r2.blob();
+
+    // 3) Mandar el documento VIEJO a obsoletos (misma carpeta)
+    const carpeta = doc.carpeta || 'General';
+    await supabaseClient.from('documentos_obsoletos').insert({
+      nombre: doc.nombre, tipo: doc.tipo, storage_url: doc.storage_url,
+      storage_path: doc.storage_path, carpeta: carpeta, obsoleto_en: new Date().toISOString()
+    });
+    await supabaseClient.from('documentos').delete().eq('id', doc.id);
+
+    // 4) Subir la NUEVA versión a Storage (misma carpeta)
+    const nuevoFile = new File([nuevoBlob], doc.nombre, { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+    const nuevoPath = carpeta + '/' + Date.now() + '_' + doc.nombre;
+    const { error: se } = await supabaseClient.storage.from('documentos').upload(nuevoPath, nuevoFile);
+    if (se) throw se;
+    const { data: ud } = supabaseClient.storage.from('documentos').getPublicUrl(nuevoPath);
+    const nuevoUrl = ud.publicUrl.includes('/object/public/') ? ud.publicUrl : ud.publicUrl.replace('/object/', '/object/public/');
+    // Re-extraer texto de la nueva versión
+    let nuevoTexto = '';
+    try { nuevoTexto = await extraerTexto(nuevoFile, 'docx'); } catch(e) {}
+    await supabaseClient.from('documentos').insert({
+      nombre: doc.nombre, tipo: doc.tipo, storage_url: nuevoUrl, storage_path: nuevoPath,
+      tamano: nuevoFile.size, carpeta: carpeta,
+      contenido_texto: nuevoTexto ? nuevoTexto.slice(0, 50000) : null,
+      creado_en: new Date().toISOString()
+    });
+
+    showToast('✅ Cambios aplicados' + (nuevaRev ? ' · Revisión → ' + nuevaRev : '') + '. El anterior pasó a Obsoletos.', 'success');
+    document.getElementById('edit-ia-instruccion').value = '';
+    await loadDocuments();
+    loadDocumentCount();
+
+    // 5) Ofrecer PDF de la nueva versión
+    if (confirm('¿Querés el PDF de la nueva versión?')) {
+      const fd2 = new FormData();
+      fd2.append('archivo', nuevoFile);
+      const r3 = await fetch(api + '/convertir-pdf', { method: 'POST', body: fd2 });
+      if (r3.ok) {
+        const pdfBlob = await r3.blob();
+        descargarBlob(pdfBlob, doc.nombre.replace(/\.docx?$/i, '') + '.pdf');
+        showToast('PDF de la nueva versión descargado', 'success');
+      } else {
+        showToast('No se pudo generar el PDF', 'error');
+      }
+    }
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+  finally { btn.innerHTML = '✏️ Aplicar cambios y subir revisión'; }
 }
 
 // ======================================================================
@@ -1015,7 +1171,7 @@ async function markObsolete() {
   const doc = uploadedDocs.find(d => d.id === selectedDocId);
   if (!confirm('¿Pasar "' + doc.nombre + '" a obsoletos?')) return;
   try {
-    const { error: ie } = await supabaseClient.from('documentos_obsoletos').insert({ nombre: doc.nombre, tipo: doc.tipo, storage_url: doc.storage_url, storage_path: doc.storage_path, obsoleto_en: new Date().toISOString() });
+    const { error: ie } = await supabaseClient.from('documentos_obsoletos').insert({ nombre: doc.nombre, tipo: doc.tipo, storage_url: doc.storage_url, storage_path: doc.storage_path, carpeta: doc.carpeta || 'General', obsoleto_en: new Date().toISOString() });
     if (ie) throw ie;
     const { error: de } = await supabaseClient.from('documentos').delete().eq('id', doc.id);
     if (de) throw de;
@@ -1515,8 +1671,8 @@ function renderObsoletosTable() {
   const c = document.getElementById('obsoletos-content');
   if (!c) return;
   if (!obsoletos.length) { c.innerHTML = '<div class="empty-state"><div class="empty-icon">🗄️</div><p>No hay documentos obsoletos</p></div>'; return; }
-  c.innerHTML = '<table class="data-table"><thead><tr><th>Nombre</th><th>Tipo</th><th>Fecha Obsolescencia</th><th>Acciones</th></tr></thead><tbody>' +
-    obsoletos.map(doc => '<tr><td><strong>' + escapeHtml(doc.nombre) + '</strong></td><td><span class="badge badge-' + (doc.tipo || '').toLowerCase() + '">' + escapeHtml(doc.tipo || '—') + '</span></td><td>' + formatDate(doc.obsoleto_en) + '</td><td><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-success btn-sm" onclick="restaurarDoc(\'' + doc.id + '\')">↩️ Restaurar</button><button class="btn btn-danger btn-sm" onclick="eliminarDefinitivo(\'' + doc.id + '\')">🗑️ Eliminar definitivamente</button></div></td></tr>').join('') +
+  c.innerHTML = '<table class="data-table"><thead><tr><th>Nombre</th><th>Carpeta</th><th>Tipo</th><th>Fecha Obsolescencia</th><th>Acciones</th></tr></thead><tbody>' +
+    obsoletos.map(doc => '<tr><td><strong>' + escapeHtml(doc.nombre) + '</strong></td><td>📁 ' + escapeHtml(doc.carpeta || 'General') + '</td><td><span class="badge badge-' + (doc.tipo || '').toLowerCase() + '">' + escapeHtml(doc.tipo || '—') + '</span></td><td>' + formatDate(doc.obsoleto_en) + '</td><td><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-success btn-sm" onclick="restaurarDoc(\'' + doc.id + '\')">↩️ Restaurar</button><button class="btn btn-danger btn-sm" onclick="eliminarDefinitivo(\'' + doc.id + '\')">🗑️ Eliminar definitivamente</button></div></td></tr>').join('') +
     '</tbody></table>';
 }
 
@@ -1525,7 +1681,7 @@ async function restaurarDoc(id) {
   if (!doc || !supabaseClient) return;
   if (!confirm('¿Restaurar "' + doc.nombre + '"?')) return;
   try {
-    const { error: ie } = await supabaseClient.from('documentos').insert({ nombre: doc.nombre, tipo: doc.tipo, storage_url: doc.storage_url, storage_path: doc.storage_path, creado_en: new Date().toISOString() });
+    const { error: ie } = await supabaseClient.from('documentos').insert({ nombre: doc.nombre, tipo: doc.tipo, storage_url: doc.storage_url, storage_path: doc.storage_path, carpeta: doc.carpeta || 'General', creado_en: new Date().toISOString() });
     if (ie) throw ie;
     const { error: de } = await supabaseClient.from('documentos_obsoletos').delete().eq('id', id);
     if (de) throw de;

@@ -121,6 +121,29 @@ CREATE INDEX IF NOT EXISTS idx_hallazgos_tipo ON hallazgos(tipo);
 CREATE INDEX IF NOT EXISTS idx_hallazgos_estado ON hallazgos(estado);
 CREATE INDEX IF NOT EXISTS idx_mails_procesado_en ON mails_procesados(procesado_en DESC);
 
+-- Base de conocimiento de la empresa (memoria que la IA usa como contexto)
+CREATE TABLE IF NOT EXISTS conocimiento (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    titulo TEXT NOT NULL,
+    categoria TEXT DEFAULT 'General',
+    contenido TEXT NOT NULL,
+    origen TEXT DEFAULT 'manual',
+    documento_nombre TEXT,
+    creado_en TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Columnas adicionales usadas por la app
+ALTER TABLE documentos ADD COLUMN IF NOT EXISTS carpeta TEXT DEFAULT 'General';
+ALTER TABLE documentos ADD COLUMN IF NOT EXISTS contenido_texto TEXT;
+ALTER TABLE documentos_obsoletos ADD COLUMN IF NOT EXISTS carpeta TEXT DEFAULT 'General';
+
+-- Desactivar RLS (app interna)
+ALTER TABLE documentos DISABLE ROW LEVEL SECURITY;
+ALTER TABLE documentos_obsoletos DISABLE ROW LEVEL SECURITY;
+ALTER TABLE hallazgos DISABLE ROW LEVEL SECURITY;
+ALTER TABLE mails_procesados DISABLE ROW LEVEL SECURITY;
+ALTER TABLE conocimiento DISABLE ROW LEVEL SECURITY;
+
 --- FIN DEL SQL ---
 
 Hacer clic en "Run" para ejecutar.
@@ -216,6 +239,31 @@ variable API_BASE en app.html con la URL pública de Railway:
 7. Actualizar API_BASE en app.html con esa URL
 
 Plan gratuito de Railway: 500 horas/mes de ejecución (suficiente para uso interno).
+
+--------------------------------------------------------------------------------
+SERVIDOR DE CONVERSIÓN (Word -> PDF exacto + edición de Word)
+--------------------------------------------------------------------------------
+La app funciona casi entera en el navegador. El único componente que necesita
+servidor es la CONVERSIÓN EXACTA de Word a PDF (con LibreOffice) y la EDICIÓN
+de Word preservando formato. Esto vive en servidor.py y se despliega en Railway
+usando el Dockerfile incluido (que instala LibreOffice).
+
+Pasos:
+1. En Railway: New Project -> Deploy from GitHub repo (este repositorio)
+2. Railway detecta el Dockerfile automáticamente (railway.json -> builder DOCKERFILE)
+   y construye la imagen con LibreOffice. La primera build tarda unos minutos.
+3. Cuando termine, Railway da una URL pública (ej: https://xxx.up.railway.app)
+4. Verificá que funciona abriendo esa URL: debe responder
+   {"servicio": "...", "libreoffice": true}
+5. En la app (app.html), abrí Configuración (⚙) y pegá esa URL en el campo
+   "URL del servidor de conversión (Railway)". Guardá.
+6. Listo: al seleccionar un documento Word en el módulo Documentos aparecen
+   las herramientas "Convertir a PDF exacto" y "Editar con IA".
+
+Notas:
+- Este servidor NO usa Supabase ni Anthropic; no necesita variables de entorno.
+- Si dejás el campo vacío en la app, las funciones de Word quedan deshabilitadas
+  y el resto de la app sigue funcionando normalmente.
 
 ALTERNATIVA — Render.com:
 1. Crear cuenta en https://render.com
