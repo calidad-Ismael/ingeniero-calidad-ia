@@ -1,6 +1,9 @@
 // ======================================================================
 // MODULE 2: DOCUMENTOS
 // ======================================================================
+let modoSeleccion = false;          // selección múltiple activa
+let docsSeleccionados = new Set();  // ids de documentos seleccionados
+
 function renderDocumentos() {
   document.getElementById('content').innerHTML = `
     <div class="module-header"><h2>📁 Gestión de Documentos</h2><p>Suba, gestione y procese sus documentos técnicos con IA</p></div>
@@ -266,14 +269,102 @@ function renderFileCards() {
   uploadedDocs.forEach(d => { const k = d.nombre.toLowerCase(); conteo[k] = (conteo[k] || 0) + 1; });
   const totalDup = Object.values(conteo).filter(n => n > 1).length;
   const avisoDup = totalDup ? '<div style="background:#fff3cd;border:1px solid #ffe08a;color:#7a5b00;padding:8px 12px;border-radius:8px;font-size:13px;margin-bottom:12px">⚠️ Hay ' + totalDup + ' nombre(s) de documento duplicado(s). Revisá y eliminá los que sobren.</div>' : '';
-  area.innerHTML = avisoDup + '<h3 style="margin-bottom:14px;color:var(--primary);font-size:15px">' + titulo + ' (' + filtered.length + ')</h3><div class="file-cards">' +
+
+  // Barra de herramientas: alternar selección múltiple / acciones masivas
+  let barra;
+  if (!modoSeleccion) {
+    barra = '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:14px">' +
+      '<h3 style="color:var(--primary);font-size:15px;margin:0">' + titulo + ' (' + filtered.length + ')</h3>' +
+      '<button class="btn btn-secondary btn-sm" onclick="activarSeleccion()">☑️ Seleccionar varios</button></div>';
+  } else {
+    const carpetas = getCarpetas();
+    const n = docsSeleccionados.size;
+    barra = '<div style="background:var(--primary);color:#fff;padding:10px 14px;border-radius:8px;margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+      '<strong style="margin-right:auto">' + n + ' seleccionado(s)</strong>' +
+      '<button class="btn btn-sm" style="background:rgba(255,255,255,.2);color:#fff" onclick="seleccionarTodos()">Seleccionar todos</button>' +
+      '<select id="bulk-carpeta" class="form-control" style="width:auto;padding:6px 10px;font-size:13px">' + carpetas.map(c => '<option value="' + escapeHtml(c) + '">' + escapeHtml(c) + '</option>').join('') + '</select>' +
+      '<button class="btn btn-accent btn-sm" onclick="moverSeleccionados()">📁 Mover</button>' +
+      '<button class="btn btn-danger btn-sm" onclick="eliminarSeleccionados()">🗑️ Eliminar</button>' +
+      '<button class="btn btn-sm" style="background:rgba(255,255,255,.2);color:#fff" onclick="cancelarSeleccion()">✖ Cancelar</button></div>';
+  }
+
+  area.innerHTML = avisoDup + barra + '<div class="file-cards">' +
     filtered.map(doc => { const esDup = conteo[doc.nombre.toLowerCase()] > 1;
-      return '<div class="file-card ' + (selectedDocId === doc.id ? 'selected' : '') + '" onclick="selectDoc(\'' + doc.id + '\')">' +
+      const sel = docsSeleccionados.has(doc.id);
+      const cls = modoSeleccion ? (sel ? 'selected' : '') : (selectedDocId === doc.id ? 'selected' : '');
+      const onclick = modoSeleccion ? 'toggleSeleccionDoc(\'' + doc.id + '\')' : 'selectDoc(\'' + doc.id + '\')';
+      const check = modoSeleccion ? '<div style="position:absolute;top:8px;right:8px;font-size:18px">' + (sel ? '✅' : '⬜') + '</div>' : '';
+      return '<div class="file-card ' + cls + '" style="position:relative" onclick="' + onclick + '">' + check +
       '<div class="file-card-icon">' + (icons[doc.tipo] || '📄') + '</div>' +
       '<div class="file-card-name">' + (esDup ? '⚠️ ' : '') + escapeHtml(doc.nombre) + '</div>' +
       '<div class="file-card-meta"><span class="badge ' + (bc[doc.tipo] || '') + '">' + escapeHtml(doc.tipo || '') + '</span>' +
       (doc.tamano ? ' · ' + Math.round(doc.tamano / 1024) + ' KB' : '') + '</div>' +
       '<div class="file-card-meta" style="margin-top:4px;color:var(--text-light)">' + (doc.carpeta || 'General') + ' · ' + formatDate(doc.creado_en) + '</div></div>'; }).join('') + '</div>';
+}
+
+// ===== Selección múltiple =====
+function activarSeleccion() {
+  modoSeleccion = true;
+  docsSeleccionados.clear();
+  selectedDocId = null;
+  const sp = document.getElementById('selected-doc-panel');
+  if (sp) sp.style.display = 'none';
+  renderFileCards();
+}
+
+function cancelarSeleccion() {
+  modoSeleccion = false;
+  docsSeleccionados.clear();
+  renderFileCards();
+}
+
+function toggleSeleccionDoc(id) {
+  if (docsSeleccionados.has(id)) docsSeleccionados.delete(id);
+  else docsSeleccionados.add(id);
+  renderFileCards();
+}
+
+function seleccionarTodos() {
+  const filtered = carpetaActual === 'todas' ? uploadedDocs : uploadedDocs.filter(d => (d.carpeta || 'General') === carpetaActual);
+  const todosSel = filtered.every(d => docsSeleccionados.has(d.id));
+  if (todosSel) filtered.forEach(d => docsSeleccionados.delete(d.id)); // toggle: deseleccionar todos
+  else filtered.forEach(d => docsSeleccionados.add(d.id));
+  renderFileCards();
+}
+
+async function moverSeleccionados() {
+  if (!supabaseClient || !docsSeleccionados.size) { showToast('No hay documentos seleccionados', 'warning'); return; }
+  const sel = document.getElementById('bulk-carpeta');
+  const carpeta = sel ? sel.value : '';
+  if (!carpeta) return;
+  const ids = Array.from(docsSeleccionados);
+  try {
+    const { error } = await supabaseClient.from('documentos').update({ carpeta }).in('id', ids);
+    if (error) throw error;
+    showToast(ids.length + ' documento(s) movido(s) a "' + carpeta + '"', 'success');
+    modoSeleccion = false;
+    docsSeleccionados.clear();
+    await loadDocuments();
+    loadDocumentCount();
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+async function eliminarSeleccionados() {
+  if (!supabaseClient || !docsSeleccionados.size) { showToast('No hay documentos seleccionados', 'warning'); return; }
+  const ids = Array.from(docsSeleccionados);
+  if (!confirm('¿Eliminar DEFINITIVAMENTE ' + ids.length + ' documento(s)? No se puede deshacer.')) return;
+  try {
+    const docs = uploadedDocs.filter(d => ids.includes(d.id));
+    const paths = docs.map(d => d.storage_path).filter(Boolean);
+    if (paths.length) { try { await supabaseClient.storage.from('documentos').remove(paths); } catch(e) {} }
+    const { error } = await supabaseClient.from('documentos').delete().in('id', ids);
+    if (error) throw error;
+    showToast(ids.length + ' documento(s) eliminado(s)', 'success');
+    modoSeleccion = false;
+    docsSeleccionados.clear();
+    await loadDocuments();
+    loadDocumentCount();
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
 }
 
 function selectDoc(id) {
