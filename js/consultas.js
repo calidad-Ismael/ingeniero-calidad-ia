@@ -41,12 +41,31 @@ async function sendChat() {
         const { data } = await supabaseClient.from('documentos').select('*').limit(200);
         if (data && data.length) {
           uploadedDocs = data; // cache para poder traer los archivos al chat con botones
-          docCtx = '\n\n=== DOCUMENTOS CARGADOS EN EL SISTEMA ===\nPodés usar el contenido de estos documentos para responder. Si la respuesta está en un documento, citá el nombre del archivo.\n\n' +
-            data.map(d => {
-              let bloque = '📄 ' + d.nombre + ' (' + d.tipo + ', carpeta: ' + (d.carpeta || 'General') + ')';
-              if (d.contenido_texto) bloque += '\nContenido:\n' + d.contenido_texto.slice(0, 6000);
-              return bloque;
-            }).join('\n\n---\n\n');
+          // Lista completa de NOMBRES (barato) para que la IA pueda traer cualquier archivo
+          const lista = data.map(d => '📄 ' + d.nombre + ' (' + d.tipo + ', carpeta: ' + (d.carpeta || 'General') + ')').join('\n');
+          // CONTENIDO solo de los documentos relevantes a la consulta, con presupuesto de caracteres
+          const q = text.toLowerCase();
+          const palabras = q.split(/\s+/).filter(w => w.length >= 4);
+          const relevantes = data
+            .filter(d => d.contenido_texto)
+            .map(d => {
+              const hay = (d.nombre + ' ' + d.contenido_texto).toLowerCase();
+              const score = palabras.reduce((s, w) => s + (hay.includes(w) ? 1 : 0), 0);
+              return { d, score };
+            })
+            .filter(x => x.score > 0)
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 5); // máx 5 documentos relevantes
+          let contenido = '';
+          let presupuesto = 40000; // tope total de caracteres de contenido
+          for (const { d } of relevantes) {
+            if (presupuesto <= 0) break;
+            const frag = d.contenido_texto.slice(0, Math.min(8000, presupuesto));
+            presupuesto -= frag.length;
+            contenido += '\n\n--- ' + d.nombre + ' ---\n' + frag;
+          }
+          docCtx = '\n\n=== DOCUMENTOS CARGADOS (lista completa) ===\n' + lista +
+            (contenido ? '\n\n=== CONTENIDO DE DOCUMENTOS RELEVANTES A LA CONSULTA ===\nCitá el nombre del archivo cuando uses su contenido.' + contenido : '');
         }
       } catch(e) {}
     }
