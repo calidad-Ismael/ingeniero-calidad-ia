@@ -99,6 +99,29 @@ function renderAgenda() {
       <button class="btn btn-primary" onclick="crearTarea()">💾 Guardar tarea</button>
     </div>
     <div class="card">
+      <div class="card-title">📋 Cargar un cronograma (lista de tareas de una vez)</div>
+      <p style="font-size:13px;color:var(--text-light);margin-bottom:10px">Escribí una tarea por línea. Se crearán todas con la repetición y fecha de inicio que elijas. Ideal para tu rutina diaria/semanal/mensual.</p>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Repetición de la lista</label>
+          <select class="form-control" id="lista-recurrencia">
+            <option value="diaria">Diaria (todos los días)</option>
+            <option value="semanal">Semanal</option>
+            <option value="mensual">Mensual</option>
+            <option value="ninguna">Una vez</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">A partir de</label><input type="date" class="form-control" id="lista-fecha" value="${hoyIso()}"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Tareas (una por línea)</label>
+        <textarea class="form-control" id="lista-tareas" style="min-height:120px" placeholder="Ej:
+Revisar registros de temperatura
+Controlar limpieza de líneas
+Verificar stock de insumos
+Firmar planillas de producción"></textarea>
+      </div>
+      <button class="btn btn-primary" onclick="crearListaTareas()">📋 Crear lista</button>
+    </div>
+    <div class="card">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px">
         <div style="display:flex;gap:4px;background:var(--bg);border-radius:8px;padding:4px">
           ${['dia','semana','mes','anio'].map(v => `<button class="btn btn-sm ${agendaVista===v?'btn-primary':'btn-secondary'}" onclick="cambiarVista('${v}')">${({dia:'Día',semana:'Semana',mes:'Mes',anio:'Año'})[v]}</button>`).join('')}
@@ -230,6 +253,23 @@ async function crearTarea() {
     document.getElementById('tar-desc').value = '';
     document.getElementById('tar-hora').value = '';
     showToast('Tarea guardada', 'success');
+    await loadTareas();
+    renderVista();
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+async function crearListaTareas() {
+  if (!supabaseClient) { showToast('Configure Supabase', 'error'); return; }
+  const fecha = document.getElementById('lista-fecha').value;
+  const recurrencia = document.getElementById('lista-recurrencia').value;
+  const lineas = document.getElementById('lista-tareas').value.split('\n').map(l => l.trim()).filter(Boolean);
+  if (!fecha || !lineas.length) { showToast('Escribí al menos una tarea y la fecha', 'warning'); return; }
+  try {
+    const filas = lineas.map(titulo => ({ titulo, fecha, recurrencia, activa: true, creado_en: new Date().toISOString() }));
+    const { error } = await supabaseClient.from('tareas').insert(filas);
+    if (error) throw error;
+    document.getElementById('lista-tareas').value = '';
+    showToast(filas.length + ' tarea(s) creada(s)', 'success');
     await loadTareas();
     renderVista();
   } catch(e) { showToast('Error: ' + e.message, 'error'); }
