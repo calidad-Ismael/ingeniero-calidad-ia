@@ -305,7 +305,10 @@ async function mostrarCartelDiario() {
     const ini = inicioSemana(hoy);
     repasoOcc = ocurrenciasEnRango(ini, hoy);
   }
-  if (!hoyOcc.length && !prox.length && !repasoOcc.length) return;
+  // Vencimientos (alertas) del mes / próximos días
+  let vencimientos = [];
+  if (typeof getAlertasProximas === 'function') { try { vencimientos = await getAlertasProximas(); } catch(e) {} }
+  if (!hoyOcc.length && !prox.length && !repasoOcc.length && !vencimientos.length) return;
 
   let html = '<div class="modal" style="max-width:560px;max-height:85vh;overflow-y:auto">' +
     '<h2>📅 ' + textoFechaLarga(hoy) + '</h2>';
@@ -326,6 +329,16 @@ async function mostrarCartelDiario() {
   if (prox.length) {
     html += '<div style="font-weight:700;color:var(--primary);margin:14px 0 8px">⏰ Se aproximan</div>' +
       prox.map(o => '<div style="font-size:13px;padding:4px 0">📌 <strong>' + fechaCorta(o.fecha) + '</strong> — ' + escapeHtml(o.tarea.titulo) + '</div>').join('');
+  }
+
+  if (vencimientos.length) {
+    html += '<div style="font-weight:700;color:var(--primary);margin:14px 0 8px">🔔 Vencimientos del mes</div>' +
+      vencimientos.slice(0, 15).map(a => {
+        const f = new Date(a.fecha_vencimiento + 'T00:00:00'); const hh = new Date(); hh.setHours(0,0,0,0);
+        const dias = Math.round((f - hh) / 86400000);
+        const ic = dias < 0 ? '🔴' : (dias <= 7 ? '🟡' : '🟢');
+        return '<div style="font-size:13px;padding:4px 0">' + ic + ' <strong>' + escapeHtml(a.fecha_vencimiento) + '</strong> — ' + escapeHtml(a.titulo) + '</div>';
+      }).join('');
   }
 
   html += '<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:18px">' +
